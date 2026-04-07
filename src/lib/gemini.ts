@@ -1,7 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { Utterance } from './types';
 
-const TRANSCRIBE_TIMEOUT = 5 * 60 * 1000; // 5分
 const INLINE_SIZE_LIMIT = 20 * 1024 * 1024; // 20MB
 
 function getClient(): GoogleGenerativeAI {
@@ -12,8 +11,7 @@ function getClient(): GoogleGenerativeAI {
 
 export async function transcribeAudio(
   audioBuffer: Buffer,
-  mimeType: string,
-  clientName: string
+  mimeType: string
 ): Promise<Utterance[]> {
   const client = getClient();
   const model = client.getGenerativeModel({ model: 'gemini-2.5-flash-preview-04-17' });
@@ -21,8 +19,10 @@ export async function transcribeAudio(
   const prompt = `以下の音声を文字起こしし、話者を分離してください。
 
 【話者の前提】
-- 話者Aは「もっちゃん」（アドバイザー・インタビュアー側）
-- 話者Bは「${clientName}」（クライアント・相談者側）
+- これはコンサルティング/アドバイザリーセッションの録音です
+- 話者Aはアドバイザー（もっちゃん）です
+- 話者Bはクライアント（相談者）です
+- 会話の内容から話者を判別してください
 
 【出力形式】
 必ず以下のJSON配列のみを返してください。他のテキストは一切含めないこと。
@@ -42,9 +42,6 @@ export async function transcribeAudio(
 - 日本語で出力`;
 
   if (audioBuffer.length > INLINE_SIZE_LIMIT) {
-    // Files API経由（大きいファイル）
-    // Gemini JS SDKでは現在 inline data のみサポート
-    // 20MB超の場合はエラーとする（将来Files API対応）
     throw new Error(`ファイルサイズが${INLINE_SIZE_LIMIT / 1024 / 1024}MBを超えています。現在のバージョンでは対応していません。`);
   }
 
@@ -68,26 +65,16 @@ export async function transcribeAudio(
     },
   });
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TRANSCRIBE_TIMEOUT);
+  const text = result.response.text();
 
-  try {
-    const text = result.response.text();
-    clearTimeout(timeout);
-
-    // JSONパース
-    const parsed = JSON.parse(text);
-    if (!Array.isArray(parsed)) {
-      throw new Error('Geminiの応答がJSON配列ではありません');
-    }
-
-    return parsed.map((item: Record<string, unknown>) => ({
-      speaker: item.speaker as 'A' | 'B',
-      timestamp: (item.timestamp as string) || '00:00:00',
-      text: item.text as string,
-    }));
-  } catch (err) {
-    clearTimeout(timeout);
-    throw err;
+  const parsed = JSON.parse(text);
+  if (!Array.isArray(parsed)) {
+    throw new Error('Geminiの応答がJSON配列ではありません');
   }
+
+  return parsed.map((item: Record<string, unknown>) => ({
+    speaker: item.speaker as 'A' | 'B',
+    timestamp: (item.timestamp as string) || '00:00:00',
+    text: item.text as string,
+  }));
 }

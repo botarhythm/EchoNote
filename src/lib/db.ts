@@ -92,6 +92,14 @@ export async function upsertSession(session: Partial<Session> & { id: string }):
       sets.push(`summary_json = $${idx++}`);
       vals.push(JSON.stringify(session.summary));
     }
+    if (session.meta) {
+      sets.push(`filename = $${idx++}`);
+      vals.push(session.meta.originalFilename);
+      sets.push(`client_name = $${idx++}`);
+      vals.push(session.meta.clientName);
+      sets.push(`session_date = $${idx++}`);
+      vals.push(session.meta.date);
+    }
     if (session.error !== undefined) {
       sets.push(`error_message = $${idx++}`);
       vals.push(session.error || null);

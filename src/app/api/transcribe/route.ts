@@ -20,8 +20,7 @@ export async function POST(request: NextRequest) {
     const audioBuffer = await downloadFile(fileId);
     const transcript = await transcribeAudio(
       audioBuffer,
-      session.meta.mimeType,
-      session.meta.clientName
+      session.meta.mimeType
     );
 
     await updateStatus(fileId, 'summarizing', { transcript });

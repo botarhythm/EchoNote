@@ -1,8 +1,8 @@
-import { listAudioFiles, downloadFile, moveToProcessed } from './drive';
-import { parseSessionMeta } from './parser';
+import { listAudioFiles, downloadFile, renameFile, moveToProcessed } from './drive';
 import { initDb, upsertSession, getSession, updateStatus } from './db';
 import { transcribeAudio } from './gemini';
 import { generateSummary } from './claude';
+import path from 'path';
 
 const POLL_INTERVAL = Number(process.env.POLL_INTERVAL_MS) || 60000;
 let isRunning = false;
@@ -29,17 +29,20 @@ export async function poll(): Promise<{ found: number; processing: string[] }> {
       const existing = await getSession(file.id);
       if (existing && existing.status !== 'error') continue;
 
-      const meta = parseSessionMeta(file.name, file.id, file.mimeType);
-      if (!meta) {
-        console.log(`[EchoNote] ファイル名が命名規則に合いません: ${file.name}`);
-        continue;
-      }
+      // どんなファイル名でも受け入れる
+      const meta = {
+        date: '',
+        clientName: '',
+        originalFilename: file.name,
+        driveFileId: file.id,
+        mimeType: file.mimeType,
+      };
 
       await upsertSession({ id: file.id, meta, status: 'pending' });
       processing.push(file.id);
+      console.log(`[EchoNote] 新規ファイル検知: ${file.name}`);
 
-      // 非同期で処理開始
-      processSession(file.id, meta).catch(async (err) => {
+      processSession(file.id, file.name, file.mimeType).catch(async (err) => {
         console.error(`[EchoNote] セッション処理エラー (${file.id}):`, err);
         await updateStatus(file.id, 'error', {
           error: err instanceof Error ? err.message : String(err),
@@ -56,24 +59,45 @@ export async function poll(): Promise<{ found: number; processing: string[] }> {
   }
 }
 
-async function processSession(
-  fileId: string,
-  meta: NonNullable<ReturnType<typeof parseSessionMeta>>
-) {
+async function processSession(fileId: string, originalFilename: string, mimeType: string) {
   // 1. 文字起こし
   await updateStatus(fileId, 'transcribing');
   const audioBuffer = await downloadFile(fileId);
-  const transcript = await transcribeAudio(audioBuffer, meta.mimeType, meta.clientName);
+  const transcript = await transcribeAudio(audioBuffer, mimeType);
   await updateStatus(fileId, 'summarizing', { transcript });
 
   // 2. サマリー生成
-  const summary = await generateSummary(transcript, meta);
+  const summary = await generateSummary(transcript, originalFilename);
+
+  // 3. サマリーからメタデータを構築してDBを更新
+  const date = summary.date || new Date().toISOString().slice(0, 10);
+  const clientName = summary.clientName || '不明';
+  const ext = path.extname(originalFilename) || '.m4a';
+  const newFilename = `${date.replace(/-/g, '')}_${clientName}${ext}`;
+
+  const meta = {
+    date,
+    clientName,
+    originalFilename: newFilename,
+    driveFileId: fileId,
+    mimeType,
+  };
+
   await updateStatus(fileId, 'done', {
+    meta,
     summary,
     processedAt: new Date().toISOString(),
   });
 
-  // 3. Processedフォルダに移動
+  // 4. Driveのファイル名をリネーム
+  try {
+    await renameFile(fileId, newFilename);
+    console.log(`[EchoNote] リネーム: ${originalFilename} → ${newFilename}`);
+  } catch (err) {
+    console.error(`[EchoNote] リネームエラー (${fileId}):`, err);
+  }
+
+  // 5. Processedフォルダに移動
   try {
     await moveToProcessed(fileId);
   } catch (err) {

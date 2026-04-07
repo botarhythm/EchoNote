@@ -50,6 +50,14 @@ export async function downloadFile(fileId: string): Promise<Buffer> {
   return Buffer.from(res.data as ArrayBuffer);
 }
 
+export async function renameFile(fileId: string, newName: string): Promise<void> {
+  const drive = getDrive();
+  await drive.files.update({
+    fileId,
+    requestBody: { name: newName },
+  });
+}
+
 export async function moveToProcessed(fileId: string): Promise<void> {
   const folderId = process.env.DRIVE_FOLDER_ID;
   const processedFolderId = process.env.DRIVE_PROCESSED_FOLDER_ID;

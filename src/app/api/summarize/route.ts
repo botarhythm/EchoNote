@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     await updateStatus(fileId, 'summarizing');
 
-    const summary = await generateSummary(session.transcript, session.meta);
+    const summary = await generateSummary(session.transcript, session.meta.originalFilename);
 
     await updateStatus(fileId, 'done', {
       summary,
