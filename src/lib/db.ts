@@ -31,6 +31,13 @@ export async function initDb(): Promise<void> {
       processed_at TIMESTAMPTZ
     )
   `);
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS shares (
+      token TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES sessions(id),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
 }
 
 interface SessionRow {
@@ -153,4 +160,24 @@ export async function updateStatus(
   data?: Partial<Session>
 ): Promise<void> {
   await upsertSession({ id, status, ...data });
+}
+
+export async function createShare(sessionId: string): Promise<string> {
+  const p = getPool();
+  const existing = await p.query('SELECT token FROM shares WHERE session_id = $1', [sessionId]);
+  if (existing.rows.length > 0) return existing.rows[0].token as string;
+
+  const { randomBytes } = await import('crypto');
+  const token = randomBytes(16).toString('hex');
+  await p.query('INSERT INTO shares (token, session_id) VALUES ($1, $2)', [token, sessionId]);
+  return token;
+}
+
+export async function getSessionByShareToken(token: string): Promise<Session | null> {
+  const p = getPool();
+  const res = await p.query(
+    'SELECT s.* FROM sessions s JOIN shares sh ON s.id = sh.session_id WHERE sh.token = $1',
+    [token]
+  );
+  return res.rows.length > 0 ? rowToSession(res.rows[0] as SessionRow) : null;
 }

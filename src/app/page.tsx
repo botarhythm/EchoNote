@@ -3,6 +3,7 @@
 import { useEffect, useCallback } from 'react';
 import { useSessionsStore } from '@/store/sessions';
 import { SessionCard } from '@/components/SessionCard';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import type { Session } from '@/lib/types';
 
 const REFRESH_INTERVAL = Number(process.env.NEXT_PUBLIC_POLL_INTERVAL_MS) || 10000;
@@ -46,31 +47,32 @@ export default function HomePage() {
     <div className="mx-auto max-w-4xl px-6 py-10">
       <header className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-100">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             EchoNote
           </h1>
-          <p className="text-sm text-slate-400">Session Archive</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Session Archive</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {lastPolledAt && (
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-slate-400 dark:text-slate-500">
               最終更新: {lastPolledAt}
             </span>
           )}
           <button
             onClick={triggerPoll}
             disabled={isPolling}
-            className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
           >
             {isPolling ? 'チェック中...' : '今すぐチェック'}
           </button>
+          <ThemeToggle />
         </div>
       </header>
 
       {sessions.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-700 p-12 text-center">
-          <p className="text-slate-400">セッションがありません</p>
-          <p className="mt-2 text-sm text-slate-500">
+        <div className="rounded-lg border border-dashed border-slate-300 p-12 text-center dark:border-slate-700">
+          <p className="text-slate-500 dark:text-slate-400">セッションがありません</p>
+          <p className="mt-2 text-sm text-slate-400 dark:text-slate-500">
             Google Driveの指定フォルダに音声ファイルをアップロードすると自動検知されます
           </p>
         </div>
