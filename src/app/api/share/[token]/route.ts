@@ -12,11 +12,11 @@ export async function GET(
     return NextResponse.json({ error: '共有リンクが無効です' }, { status: 404 });
   }
 
-  // 共有ビューではtranscriptは含めない（サマリーのみ）
   return NextResponse.json({
     session: {
       meta: session.meta,
       summary: session.summary,
+      transcript: session.transcript,
       status: session.status,
     },
   });
