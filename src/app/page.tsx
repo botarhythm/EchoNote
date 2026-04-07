@@ -83,6 +83,10 @@ export default function HomePage() {
           ))}
         </div>
       )}
+
+      <footer className="mt-12 text-center text-[11px] text-slate-300 dark:text-slate-700">
+        EchoNote v{process.env.NEXT_PUBLIC_APP_VERSION || '1.0.0'}
+      </footer>
     </div>
   );
 }

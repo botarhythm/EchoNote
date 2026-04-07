@@ -63,6 +63,9 @@ export default function LoginPage() {
             {loading ? 'ログイン中...' : 'ログイン'}
           </button>
         </form>
+        <p className="mt-8 text-center text-[11px] text-slate-300 dark:text-slate-700">
+          v{process.env.NEXT_PUBLIC_APP_VERSION || '1.0.0'}
+        </p>
       </div>
     </div>
   );
