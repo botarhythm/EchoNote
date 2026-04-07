@@ -14,7 +14,7 @@ export async function transcribeAudio(
   mimeType: string
 ): Promise<Utterance[]> {
   const client = getClient();
-  const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = client.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
   const prompt = `以下の音声を文字起こしし、話者を分離してください。
 
