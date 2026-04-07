@@ -27,7 +27,7 @@ export async function poll(): Promise<{ found: number; processing: string[] }> {
 
     for (const file of files) {
       const existing = await getSession(file.id);
-      if (existing && existing.status !== 'error') continue;
+      if (existing) continue; // 登録済みならスキップ（errorの再試行は手動で）
 
       // どんなファイル名でも受け入れる
       const meta = {
