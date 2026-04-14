@@ -104,6 +104,15 @@ export async function updateProgress(id: string, message: string): Promise<void>
   await p.query('UPDATE sessions SET progress_message = $1 WHERE id = $2', [message, id]);
 }
 
+/** チャンク完了ごとに中間トランスクリプトをDBへ保存（サーバー再起動時に復元可能） */
+export async function savePartialTranscript(id: string, utterances: Utterance[]): Promise<void> {
+  const p = getPool();
+  await p.query('UPDATE sessions SET transcript_json = $1 WHERE id = $2', [
+    JSON.stringify(utterances),
+    id,
+  ]);
+}
+
 export async function upsertSession(session: Partial<Session> & { id: string }): Promise<void> {
   const p = getPool();
   const existing = await p.query('SELECT id FROM sessions WHERE id = $1', [session.id]);

@@ -143,7 +143,13 @@ export function RailwayStatus() {
               )}
             </div>
           )}
-          <div className="flex justify-end px-4 py-2">
+          <div className="flex justify-end gap-3 px-4 py-2">
+            <button
+              onClick={() => setData((d) => d ? { ...d, logs: [] } : d)}
+              className="text-xs text-slate-400 hover:text-red-400 dark:hover:text-red-400"
+            >
+              クリア
+            </button>
             <button
               onClick={fetchStatus}
               className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"

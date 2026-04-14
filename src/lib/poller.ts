@@ -108,7 +108,7 @@ async function processSession(fileId: string, originalFilename: string, mimeType
   const sizeMB = (audioBuffer.length / 1024 / 1024).toFixed(1);
   await onProgress(`📥 ダウンロード完了 (${sizeMB}MB) — 文字起こしを開始します`);
 
-  const transcript = await transcribeAudio(audioBuffer, mimeType, onProgress);
+  const transcript = await transcribeAudio(audioBuffer, mimeType, onProgress, fileId);
   await updateStatus(fileId, 'summarizing', { transcript });
 
   // 2. サマリー生成

@@ -6,6 +6,7 @@ import { spawn } from 'child_process';
 import pLimit from 'p-limit';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ffmpegStatic: string | null = require('ffmpeg-static');
+import { savePartialTranscript } from './db';
 import type { Utterance } from './types';
 
 const CHUNK_DURATION_SEC = 600; // 10分チャンク
@@ -240,9 +241,18 @@ async function transcribeChunk(
   );
 
   const text = result.text ?? '';
-  const parsed = JSON.parse(text) as unknown;
+
+  // JSON解析エラーは非致命的に（空レスポンス・切れたJSONを許容してスキップ）
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    console.warn(`[EchoNote] チャンク${chunkIndex}: JSON解析失敗（空または不完全なレスポンス）、スキップします`);
+    return [];
+  }
   if (!Array.isArray(parsed)) {
-    throw new Error(`チャンク${chunkIndex}: AIの応答がJSON配列ではありません`);
+    console.warn(`[EchoNote] チャンク${chunkIndex}: レスポンスがJSON配列ではありません、スキップします`);
+    return [];
   }
 
   // タイムスタンプにオフセットを加算
@@ -281,11 +291,12 @@ function buildPrevContext(utterances: Utterance[], count = 3): string {
 export async function transcribeAudio(
   audioBuffer: Buffer,
   mimeType: string,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  sessionId?: string  // 中間保存用（省略可）
 ): Promise<Utterance[]> {
   const ai = getClient();
   const sizeMB = (audioBuffer.length / 1024 / 1024).toFixed(1);
-  const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const tmpId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   await onProgress?.(`✍️ 音声ファイルを解析中... (${sizeMB}MB)`);
 
@@ -294,7 +305,7 @@ export async function transcribeAudio(
   let useChunked = false;
 
   try {
-    const { paths } = await splitAudio(audioBuffer, mimeType, sessionId);
+    const { paths } = await splitAudio(audioBuffer, mimeType, tmpId);
     chunkPaths = paths;
     useChunked = chunkPaths.length > 1;
     console.log(`[EchoNote] 音声を ${chunkPaths.length} チャンクに分割`);
@@ -327,7 +338,7 @@ export async function transcribeAudio(
 
     // FFmpegなし: Buffer を直接インライン/Files API で送信
     await onProgress?.('📤 AIへ音声をアップロード中...');
-    const tmpPath = join(tmpdir(), `echonote-${sessionId}`);
+    const tmpPath = join(tmpdir(), `echonote-${tmpId}`);
     writeFileSync(tmpPath, audioBuffer);
     try {
       const fileUri = await uploadViaFilesApi(ai, tmpPath, mimeType);
@@ -388,9 +399,17 @@ export async function transcribeAudio(
       }
     }));
 
-    // PARALLEL_LIMIT 個溜まったら待機（コンテキスト引き継ぎのため）
+    // PARALLEL_LIMIT 個溜まったら待機し、完了したバッチをDBに中間保存
     if (pending.length >= PARALLEL_LIMIT) {
       await pending.shift();
+      // 現時点で完了しているチャンクをDBに保存（サーバー再起動対策）
+      if (sessionId) {
+        const partial = allUtterances.filter(Boolean).flat()
+          .sort((a: Utterance, b: Utterance) => a.timestamp.localeCompare(b.timestamp));
+        if (partial.length > 0) {
+          await savePartialTranscript(sessionId, partial).catch(() => {});
+        }
+      }
     }
   }
 
