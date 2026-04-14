@@ -4,6 +4,8 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { spawn } from 'child_process';
 import pLimit from 'p-limit';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ffmpegStatic: string | null = require('ffmpeg-static');
 import type { Utterance } from './types';
 
 const CHUNK_DURATION_SEC = 600; // 10分チャンク
@@ -53,10 +55,9 @@ type ProgressCallback = (msg: string) => Promise<void>;
 
 // ─── FFmpeg ────────────────────────────────────────────────────────────────
 
-/** システムFFmpegのパスを取得 */
+/** FFmpegのパスを取得（ffmpeg-static → 環境変数 → システム の順） */
 function ffmpegPath(): string {
-  // nixpacks (Railway) = /usr/bin/ffmpeg、ローカル開発はPATHから
-  return process.env.FFMPEG_PATH || 'ffmpeg';
+  return process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg';
 }
 
 /** 音声バッファを10分チャンクに分割し、チャンクファイルパスの配列を返す */
