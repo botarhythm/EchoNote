@@ -16,7 +16,8 @@ const MAX_RETRIES = 3;
 function getClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY が設定されていません');
-  return new GoogleGenAI({ apiKey });
+  // Files APIのアップロード・文字起こしは時間がかかるため10分タイムアウトを設定
+  return new GoogleGenAI({ apiKey, httpOptions: { timeout: 600000 } });
 }
 
 /** ネットワーク系エラーを指数バックオフでリトライ */
@@ -60,13 +61,27 @@ function ffmpegPath(): string {
   return process.env.FFMPEG_PATH || ffmpegStatic || 'ffmpeg';
 }
 
+/**
+ * mimeTypeから入力ファイルの拡張子を決定する
+ * audio/mpeg はGoogle DriveがM4A(AAC)に付けることがある → m4a として扱う
+ */
+function inputExtFromMime(mimeType: string): string {
+  if (mimeType === 'audio/mpeg') return 'm4a'; // iPhoneのM4Aファイル
+  if (mimeType === 'audio/mp4' || mimeType === 'audio/x-m4a') return 'm4a';
+  if (mimeType === 'audio/wav') return 'wav';
+  if (mimeType === 'audio/ogg') return 'ogg';
+  if (mimeType === 'audio/webm') return 'webm';
+  if (mimeType === 'audio/flac') return 'flac';
+  return mimeType.split('/')[1] || 'm4a';
+}
+
 /** 音声バッファを10分チャンクに分割し、チャンクファイルパスの配列を返す */
 async function splitAudio(
   audioBuffer: Buffer,
   mimeType: string,
   sessionId: string
 ): Promise<{ paths: string[]; durationPerChunk: number }> {
-  const ext = mimeType.split('/')[1]?.replace('mpeg', 'mp3') || 'm4a';
+  const ext = inputExtFromMime(mimeType); // audio/mpeg → m4a（コンテナを正しく識別）
   const inputPath = join(tmpdir(), `echonote-input-${sessionId}.${ext}`);
   const outputPattern = join(tmpdir(), `echonote-chunk-${sessionId}-%03d.${ext}`);
 
@@ -78,7 +93,8 @@ async function splitAudio(
       '-i', inputPath,
       '-f', 'segment',
       '-segment_time', String(CHUNK_DURATION_SEC),
-      '-c', 'copy',
+      '-c:a', 'copy', // トランスコードなし（品質劣化なし・高速）
+      '-vn',           // 映像ストリームを除外
       '-reset_timestamps', '1',
       outputPattern,
     ];
