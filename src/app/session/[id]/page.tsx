@@ -20,6 +20,8 @@ export default function SessionDetailPage() {
   const [clientSettings, setClientSettings] = useState<ClientSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('summary');
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
 
   const loadSession = useCallback(async () => {
     try {
@@ -56,6 +58,30 @@ export default function SessionDetailPage() {
     const timer = setInterval(loadSession, 3000);
     return () => clearInterval(timer);
   }, [session?.status, loadSession]);
+
+  const handleTitleSave = async () => {
+    const newTitle = titleDraft.trim();
+    if (!newTitle || !session || newTitle === session.summary?.title) {
+      setEditingTitle(false);
+      return;
+    }
+    const res = await fetch(`/api/sessions/${session.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: newTitle }),
+    });
+    if (res.ok) {
+      setSession((prev) =>
+        prev?.summary ? { ...prev, summary: { ...prev.summary, title: newTitle } } : prev
+      );
+    }
+    setEditingTitle(false);
+  };
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleTitleSave();
+    if (e.key === 'Escape') setEditingTitle(false);
+  };
 
   // speakerNames: クライアント設定があればそちら、なければ自動検出相当のデフォルト
   const speakerNames: SpeakerNames = {
@@ -94,11 +120,50 @@ export default function SessionDetailPage() {
         </div>
       </div>
 
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-            {session.summary?.title || session.meta.clientName}
-          </h1>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          {/* タイトル：クリックで編集 */}
+          {editingTitle ? (
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                type="text"
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onKeyDown={handleTitleKeyDown}
+                onBlur={handleTitleSave}
+                className="w-full rounded-lg border border-blue-400 bg-white px-3 py-1.5 text-2xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:border-blue-500 dark:bg-slate-800 dark:text-slate-100"
+              />
+              <button
+                onMouseDown={(e) => { e.preventDefault(); handleTitleSave(); }}
+                className="shrink-0 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
+              >
+                保存
+              </button>
+              <button
+                onMouseDown={(e) => { e.preventDefault(); setEditingTitle(false); }}
+                className="shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400"
+              >
+                取消
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setTitleDraft(session.summary?.title || session.meta.clientName);
+                setEditingTitle(true);
+              }}
+              className="group flex items-center gap-2 text-left"
+              title="クリックして編集"
+            >
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                {session.summary?.title || session.meta.clientName}
+              </h1>
+              <span className="text-slate-300 opacity-0 transition-opacity group-hover:opacity-100 dark:text-slate-600">
+                ✎
+              </span>
+            </button>
+          )}
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             {session.meta.date} &middot; {session.meta.clientName}
             {session.meta.memo && ` · ${session.meta.memo}`}
