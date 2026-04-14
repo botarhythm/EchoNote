@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
 
-function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password).digest('hex');
+async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // 認証不要なパス
@@ -27,7 +30,7 @@ export function middleware(request: NextRequest) {
   }
 
   const cookie = request.cookies.get('echonote-auth')?.value;
-  const expected = hashPassword(adminPassword + 'echonote-salt');
+  const expected = await hashPassword(adminPassword + 'echonote-salt');
 
   if (cookie === expected) {
     return NextResponse.next();

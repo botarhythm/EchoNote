@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
 
-function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password).digest('hex');
+async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export async function POST(request: NextRequest) {
@@ -17,7 +20,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'パスワードが違います' }, { status: 401 });
   }
 
-  const token = hashPassword(adminPassword + 'echonote-salt');
+  const token = await hashPassword(adminPassword + 'echonote-salt');
   const res = NextResponse.json({ ok: true });
   res.cookies.set('echonote-auth', token, {
     httpOnly: true,
@@ -37,7 +40,7 @@ export async function GET(request: NextRequest) {
   }
 
   const cookie = request.cookies.get('echonote-auth')?.value;
-  const expected = hashPassword(adminPassword + 'echonote-salt');
+  const expected = await hashPassword(adminPassword + 'echonote-salt');
 
   return NextResponse.json({ authenticated: cookie === expected });
 }
