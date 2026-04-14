@@ -4,6 +4,7 @@ import { useEffect, useCallback } from 'react';
 import { useSessionsStore } from '@/store/sessions';
 import { SessionCard } from '@/components/SessionCard';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { RailwayStatus } from '@/components/RailwayStatus';
 import type { Session } from '@/lib/types';
 
 const REFRESH_INTERVAL = Number(process.env.NEXT_PUBLIC_POLL_INTERVAL_MS) || 10000;
@@ -91,7 +92,9 @@ export default function HomePage() {
         </div>
       )}
 
-      <footer className="mt-12 text-center text-[11px] text-slate-300 dark:text-slate-700">
+      <RailwayStatus />
+
+      <footer className="mt-6 text-center text-[11px] text-slate-300 dark:text-slate-700">
         EchoNote v{process.env.NEXT_PUBLIC_APP_VERSION || '1.0.0'}
       </footer>
     </div>
