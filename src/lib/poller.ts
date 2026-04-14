@@ -6,22 +6,35 @@ import path from 'path';
 
 const POLL_INTERVAL = Number(process.env.POLL_INTERVAL_MS) || 60000;
 let isRunning = false;
+const processingIds = new Set<string>();
 
 export async function retrySession(sessionId: string): Promise<void> {
   const session = await getSession(sessionId);
   if (!session) throw new Error('セッションが見つかりません');
 
-  // ステータスをリセットしてエラーをクリア
+  // 処理中ステータスなら弾く
+  if (['pending', 'transcribing', 'summarizing'].includes(session.status)) {
+    throw new Error('すでに処理中です');
+  }
+
+  // セッション単位のロック
+  if (processingIds.has(sessionId)) {
+    throw new Error('すでに処理中です');
+  }
+  processingIds.add(sessionId);
+
   await updateStatus(sessionId, 'pending', { error: '' });
 
-  processSession(sessionId, session.meta.originalFilename, session.meta.mimeType).catch(
-    async (err) => {
+  processSession(sessionId, session.meta.originalFilename, session.meta.mimeType)
+    .catch(async (err) => {
       console.error(`[EchoNote] 再処理エラー (${sessionId}):`, err);
       await updateStatus(sessionId, 'error', {
         error: err instanceof Error ? err.message : String(err),
       });
-    }
-  );
+    })
+    .finally(() => {
+      processingIds.delete(sessionId);
+    });
 }
 
 export function startPolling() {
@@ -59,12 +72,17 @@ export async function poll(): Promise<{ found: number; processing: string[] }> {
       processing.push(file.id);
       console.log(`[EchoNote] 新規ファイル検知: ${file.name}`);
 
-      processSession(file.id, file.name, file.mimeType).catch(async (err) => {
-        console.error(`[EchoNote] セッション処理エラー (${file.id}):`, err);
-        await updateStatus(file.id, 'error', {
-          error: err instanceof Error ? err.message : String(err),
+      processingIds.add(file.id);
+      processSession(file.id, file.name, file.mimeType)
+        .catch(async (err) => {
+          console.error(`[EchoNote] セッション処理エラー (${file.id}):`, err);
+          await updateStatus(file.id, 'error', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        })
+        .finally(() => {
+          processingIds.delete(file.id);
         });
-      });
     }
 
     return { found: files.length, processing };
