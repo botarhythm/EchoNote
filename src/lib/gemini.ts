@@ -1,24 +1,17 @@
-import { GoogleGenerativeAI, type Part } from '@google/generative-ai';
-import { GoogleAIFileManager, FileState } from '@google/generative-ai/server';
+import { GoogleGenAI } from '@google/genai';
 import { writeFileSync, unlinkSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import type { Utterance } from './types';
 
 const INLINE_SIZE_LIMIT = 20 * 1024 * 1024; // 20MB
-const FILES_API_PROCESSING_TIMEOUT_MS = 10 * 60 * 1000; // 最大10分待機
+const FILES_API_PROCESSING_TIMEOUT_MS = 10 * 60 * 1000; // 最大10分
 const MAX_RETRIES = 3;
 
-function getClient(): GoogleGenerativeAI {
+function getClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY が設定されていません');
-  return new GoogleGenerativeAI(apiKey);
-}
-
-function getFileManager(): GoogleAIFileManager {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY が設定されていません');
-  return new GoogleAIFileManager(apiKey);
+  return new GoogleGenAI({ apiKey });
 }
 
 /** ネットワーク系エラーを指数バックオフでリトライ */
@@ -30,55 +23,60 @@ async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
     } catch (err) {
       lastError = err;
       const message = err instanceof Error ? err.message : String(err);
+      const cause = (err as { cause?: { message?: string } })?.cause?.message ?? '';
+      const fullMessage = `${message} ${cause}`;
+
       const isRetryable =
-        message.includes('fetch failed') ||
-        message.includes('ECONNRESET') ||
-        message.includes('ETIMEDOUT') ||
-        message.includes('socket hang up') ||
-        message.includes('Connection reset');
+        fullMessage.includes('fetch failed') ||
+        fullMessage.includes('ECONNRESET') ||
+        fullMessage.includes('ETIMEDOUT') ||
+        fullMessage.includes('socket hang up') ||
+        fullMessage.includes('Connection reset');
 
-      if (!isRetryable || attempt === MAX_RETRIES - 1) throw err;
+      if (!isRetryable || attempt === MAX_RETRIES - 1) {
+        // 根本原因も含めてログ出力
+        console.error(`[EchoNote] ${label} 失敗 (attempt ${attempt + 1}):`, message, cause ? `cause: ${cause}` : '');
+        throw err;
+      }
 
-      const delaySec = 5 * Math.pow(2, attempt); // 5s → 10s → 20s
-      console.log(
-        `[EchoNote] ${label} — ネットワークエラー、${delaySec}秒後にリトライ (${attempt + 1}/${MAX_RETRIES}): ${message}`
-      );
+      const delaySec = 5 * Math.pow(2, attempt);
+      console.log(`[EchoNote] ${label} — ネットワークエラー、${delaySec}秒後にリトライ (${attempt + 1}/${MAX_RETRIES}): ${fullMessage}`);
       await new Promise((resolve) => setTimeout(resolve, delaySec * 1000));
     }
   }
   throw lastError;
 }
 
-async function uploadViaFilesApi(audioBuffer: Buffer, mimeType: string): Promise<string> {
-  const fileManager = getFileManager();
+async function uploadViaFilesApi(ai: GoogleGenAI, audioBuffer: Buffer, mimeType: string): Promise<string> {
   const tmpPath = join(tmpdir(), `echonote-${Date.now()}`);
   writeFileSync(tmpPath, audioBuffer);
 
   try {
-    const uploadResponse = await withRetry(
-      () => fileManager.uploadFile(tmpPath, { mimeType }),
+    const uploaded = await withRetry(
+      () => ai.files.upload({ file: tmpPath, config: { mimeType } }),
       'Files API アップロード'
     );
-    let file = uploadResponse.file;
 
     // PROCESSING 状態が解除されるまで待機（最大10分）
     const deadline = Date.now() + FILES_API_PROCESSING_TIMEOUT_MS;
-    while (file.state === FileState.PROCESSING) {
+    let fileInfo = uploaded;
+
+    while (fileInfo.state === 'PROCESSING') {
       if (Date.now() > deadline) {
         throw new Error('Gemini Files API の処理がタイムアウトしました（10分超過）');
       }
       await new Promise((resolve) => setTimeout(resolve, 3000));
-      file = await withRetry(
-        () => fileManager.getFile(file.name),
+      fileInfo = await withRetry(
+        () => ai.files.get({ name: fileInfo.name! }),
         'Files API ステータス確認'
       );
     }
 
-    if (file.state === FileState.FAILED) {
+    if (fileInfo.state === 'FAILED') {
       throw new Error('Gemini Files API でのファイル処理に失敗しました');
     }
 
-    return file.uri;
+    return fileInfo.uri!;
   } finally {
     if (existsSync(tmpPath)) unlinkSync(tmpPath);
   }
@@ -114,8 +112,11 @@ export async function transcribeAudio(
   audioBuffer: Buffer,
   mimeType: string
 ): Promise<Utterance[]> {
-  const client = getClient();
-  const model = client.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const ai = getClient();
+
+  type Part =
+    | { inlineData: { mimeType: string; data: string } }
+    | { fileData: { mimeType: string; fileUri: string } };
 
   let audioPart: Part;
 
@@ -123,7 +124,7 @@ export async function transcribeAudio(
     console.log(
       `[EchoNote] ファイルサイズ ${(audioBuffer.length / 1024 / 1024).toFixed(1)}MB — Files API を使用`
     );
-    const fileUri = await uploadViaFilesApi(audioBuffer, mimeType);
+    const fileUri = await uploadViaFilesApi(ai, audioBuffer, mimeType);
     audioPart = { fileData: { mimeType, fileUri } };
   } else {
     audioPart = { inlineData: { mimeType, data: audioBuffer.toString('base64') } };
@@ -131,14 +132,15 @@ export async function transcribeAudio(
 
   const result = await withRetry(
     () =>
-      model.generateContent({
+      ai.models.generateContent({
+        model: 'gemini-2.5-flash',
         contents: [{ role: 'user', parts: [audioPart, { text: PROMPT }] }],
-        generationConfig: { responseMimeType: 'application/json' },
+        config: { responseMimeType: 'application/json' },
       }),
     'Gemini generateContent'
   );
 
-  const text = result.response.text();
+  const text = result.text ?? '';
   const parsed = JSON.parse(text) as unknown;
   if (!Array.isArray(parsed)) {
     throw new Error('Geminiの応答がJSON配列ではありません');

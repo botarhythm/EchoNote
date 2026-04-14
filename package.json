@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
+    "@google/genai": "^1.50.0",
     "@google/generative-ai": "^0.24.1",
     "@types/pg": "^8.20.0",
     "googleapis": "^171.4.0",
