@@ -1,11 +1,13 @@
 import { GoogleGenerativeAI, type Part } from '@google/generative-ai';
 import { GoogleAIFileManager, FileState } from '@google/generative-ai/server';
-import { writeFileSync, unlinkSync } from 'fs';
+import { writeFileSync, unlinkSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import type { Utterance } from './types';
 
 const INLINE_SIZE_LIMIT = 20 * 1024 * 1024; // 20MB
+const FILES_API_PROCESSING_TIMEOUT_MS = 10 * 60 * 1000; // 最大10分待機
+const MAX_RETRIES = 3;
 
 function getClient(): GoogleGenerativeAI {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -19,22 +21,57 @@ function getFileManager(): GoogleAIFileManager {
   return new GoogleAIFileManager(apiKey);
 }
 
-async function uploadViaFilesApi(
-  audioBuffer: Buffer,
-  mimeType: string
-): Promise<string> {
+/** ネットワーク系エラーを指数バックオフでリトライ */
+async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const message = err instanceof Error ? err.message : String(err);
+      const isRetryable =
+        message.includes('fetch failed') ||
+        message.includes('ECONNRESET') ||
+        message.includes('ETIMEDOUT') ||
+        message.includes('socket hang up') ||
+        message.includes('Connection reset');
+
+      if (!isRetryable || attempt === MAX_RETRIES - 1) throw err;
+
+      const delaySec = 5 * Math.pow(2, attempt); // 5s → 10s → 20s
+      console.log(
+        `[EchoNote] ${label} — ネットワークエラー、${delaySec}秒後にリトライ (${attempt + 1}/${MAX_RETRIES}): ${message}`
+      );
+      await new Promise((resolve) => setTimeout(resolve, delaySec * 1000));
+    }
+  }
+  throw lastError;
+}
+
+async function uploadViaFilesApi(audioBuffer: Buffer, mimeType: string): Promise<string> {
   const fileManager = getFileManager();
   const tmpPath = join(tmpdir(), `echonote-${Date.now()}`);
   writeFileSync(tmpPath, audioBuffer);
 
   try {
-    const uploadResponse = await fileManager.uploadFile(tmpPath, { mimeType });
+    const uploadResponse = await withRetry(
+      () => fileManager.uploadFile(tmpPath, { mimeType }),
+      'Files API アップロード'
+    );
     let file = uploadResponse.file;
 
-    // PROCESSING 状態が解除されるまで待機
+    // PROCESSING 状態が解除されるまで待機（最大10分）
+    const deadline = Date.now() + FILES_API_PROCESSING_TIMEOUT_MS;
     while (file.state === FileState.PROCESSING) {
+      if (Date.now() > deadline) {
+        throw new Error('Gemini Files API の処理がタイムアウトしました（10分超過）');
+      }
       await new Promise((resolve) => setTimeout(resolve, 3000));
-      file = await fileManager.getFile(file.name);
+      file = await withRetry(
+        () => fileManager.getFile(file.name),
+        'Files API ステータス確認'
+      );
     }
 
     if (file.state === FileState.FAILED) {
@@ -43,7 +80,7 @@ async function uploadViaFilesApi(
 
     return file.uri;
   } finally {
-    unlinkSync(tmpPath);
+    if (existsSync(tmpPath)) unlinkSync(tmpPath);
   }
 }
 
@@ -83,31 +120,25 @@ export async function transcribeAudio(
   let audioPart: Part;
 
   if (audioBuffer.length > INLINE_SIZE_LIMIT) {
-    // 20MB超 → Files API 経由でアップロード
     console.log(
       `[EchoNote] ファイルサイズ ${(audioBuffer.length / 1024 / 1024).toFixed(1)}MB — Files API を使用`
     );
     const fileUri = await uploadViaFilesApi(audioBuffer, mimeType);
     audioPart = { fileData: { mimeType, fileUri } };
   } else {
-    // 20MB以下 → インラインデータ
     audioPart = { inlineData: { mimeType, data: audioBuffer.toString('base64') } };
   }
 
-  const result = await model.generateContent({
-    contents: [
-      {
-        role: 'user',
-        parts: [audioPart, { text: PROMPT }],
-      },
-    ],
-    generationConfig: {
-      responseMimeType: 'application/json',
-    },
-  });
+  const result = await withRetry(
+    () =>
+      model.generateContent({
+        contents: [{ role: 'user', parts: [audioPart, { text: PROMPT }] }],
+        generationConfig: { responseMimeType: 'application/json' },
+      }),
+    'Gemini generateContent'
+  );
 
   const text = result.response.text();
-
   const parsed = JSON.parse(text) as unknown;
   if (!Array.isArray(parsed)) {
     throw new Error('Geminiの応答がJSON配列ではありません');
