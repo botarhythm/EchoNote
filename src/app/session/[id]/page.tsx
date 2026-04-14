@@ -23,6 +23,8 @@ export default function SessionDetailPage() {
   const [activeTab, setActiveTab] = useState<Tab>('summary');
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
+  const [editingMeta, setEditingMeta] = useState(false);
+  const [metaDraft, setMetaDraft] = useState({ clientName: '', date: '' });
   // ShareLog のリフレッシュ用カウンター（共有リンク発行後インクリメント）
   const [shareRefresh, setShareRefresh] = useState(0);
 
@@ -77,6 +79,30 @@ export default function SessionDetailPage() {
   const handleTitleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleTitleSave();
     if (e.key === 'Escape') setEditingTitle(false);
+  };
+
+  const handleMetaSave = async () => {
+    if (!session) { setEditingMeta(false); return; }
+    const clientName = metaDraft.clientName.trim();
+    const date = metaDraft.date.trim();
+    if (!clientName && !date) { setEditingMeta(false); return; }
+    const body: Record<string, string> = {};
+    if (clientName && clientName !== session.meta.clientName) body.clientName = clientName;
+    if (date && date !== session.meta.date) body.date = date;
+    if (Object.keys(body).length === 0) { setEditingMeta(false); return; }
+    const res = await fetch(`/api/sessions/${session.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      setSession((prev) => prev ? {
+        ...prev,
+        meta: { ...prev.meta, ...body },
+        summary: prev.summary ? { ...prev.summary, ...body } : prev.summary,
+      } : prev);
+    }
+    setEditingMeta(false);
   };
 
   const speakerNames: SpeakerNames = {
@@ -176,10 +202,49 @@ export default function SessionDetailPage() {
                   </button>
                 )}
               </div>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                {session.meta.date} · {session.meta.clientName}
-                {session.meta.memo && ` · ${session.meta.memo}`}
-              </p>
+              {/* メタ情報（日付・クライアント名）インライン編集 */}
+              {editingMeta ? (
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    type="date"
+                    value={metaDraft.date}
+                    onChange={(e) => setMetaDraft((d) => ({ ...d, date: e.target.value }))}
+                    className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                  />
+                  <input
+                    autoFocus
+                    type="text"
+                    value={metaDraft.clientName}
+                    onChange={(e) => setMetaDraft((d) => ({ ...d, clientName: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleMetaSave(); if (e.key === 'Escape') setEditingMeta(false); }}
+                    placeholder="クライアント名"
+                    className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                  />
+                  <div className="flex gap-2">
+                    <button onClick={handleMetaSave} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 active:bg-blue-800">保存</button>
+                    <button onClick={() => setEditingMeta(false)} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400">取消</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-1 flex items-center gap-1.5">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {session.meta.date} · {session.meta.clientName}
+                    {session.meta.memo && ` · ${session.meta.memo}`}
+                  </p>
+                  <button
+                    onClick={() => {
+                      setMetaDraft({ clientName: session.meta.clientName, date: session.meta.date });
+                      setEditingMeta(true);
+                    }}
+                    className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 active:bg-slate-200 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+                    title="日付・クライアント名を編集"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                </div>
+              )}
             </div>
             <StatusBadge status={session.status} />
           </div>

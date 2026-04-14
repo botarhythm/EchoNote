@@ -42,14 +42,40 @@ export async function PATCH(
     return NextResponse.json({ error: 'セッションが見つかりません' }, { status: 404 });
   }
 
-  const body = (await request.json()) as { title?: string };
+  const body = (await request.json()) as {
+    title?: string;
+    clientName?: string;
+    date?: string;
+  };
+
+  const updates: Parameters<typeof updateStatus>[2] = {};
+
   if (typeof body.title === 'string' && session.summary) {
-    const updatedSummary = { ...session.summary, title: body.title.trim() };
-    await updateStatus(id, session.status, { summary: updatedSummary });
-    return NextResponse.json({ ok: true, title: updatedSummary.title });
+    updates.summary = { ...session.summary, title: body.title.trim() };
   }
 
-  return NextResponse.json({ error: '更新するデータがありません' }, { status: 400 });
+  if (typeof body.clientName === 'string' || typeof body.date === 'string') {
+    updates.meta = {
+      ...session.meta,
+      ...(typeof body.clientName === 'string' && { clientName: body.clientName.trim() }),
+      ...(typeof body.date === 'string' && { date: body.date.trim() }),
+    };
+    // summaryのclientName/dateも同期
+    if (session.summary) {
+      updates.summary = {
+        ...(updates.summary ?? session.summary),
+        ...(typeof body.clientName === 'string' && { clientName: body.clientName.trim() }),
+        ...(typeof body.date === 'string' && { date: body.date.trim() }),
+      };
+    }
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: '更新するデータがありません' }, { status: 400 });
+  }
+
+  await updateStatus(id, session.status, updates);
+  return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(
