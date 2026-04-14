@@ -3,19 +3,21 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import type { Session } from '@/lib/types';
+import type { Session, SessionSummary, SpeakerNames, ClientSettings } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { SummaryView } from '@/components/SummaryView';
 import { TranscriptView } from '@/components/TranscriptView';
 import { ShareButton } from '@/components/ShareButton';
 import { MindMap } from '@/components/MindMap';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { SummaryCustomizer } from '@/components/SummaryCustomizer';
 
 type Tab = 'summary' | 'transcript';
 
 export default function SessionDetailPage() {
   const params = useParams<{ id: string }>();
   const [session, setSession] = useState<Session | null>(null);
+  const [clientSettings, setClientSettings] = useState<ClientSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('summary');
 
@@ -37,13 +39,29 @@ export default function SessionDetailPage() {
     loadSession();
   }, [loadSession]);
 
-  // 処理中は3秒ごとにポーリングして進捗を反映
+  // クライアント設定を読み込む（clientName確定後）
+  useEffect(() => {
+    const clientName = session?.meta.clientName;
+    if (!clientName || clientName === '不明') return;
+    fetch(`/api/clients/${encodeURIComponent(clientName)}/settings`)
+      .then((r) => r.json())
+      .then((data: { settings: ClientSettings }) => setClientSettings(data.settings))
+      .catch(() => {});
+  }, [session?.meta.clientName]);
+
+  // 処理中は3秒ごとにポーリング
   useEffect(() => {
     if (!session) return;
     if (!['pending', 'transcribing', 'summarizing'].includes(session.status)) return;
     const timer = setInterval(loadSession, 3000);
     return () => clearInterval(timer);
   }, [session?.status, loadSession]);
+
+  // speakerNames: クライアント設定があればそちら、なければ自動検出相当のデフォルト
+  const speakerNames: SpeakerNames = {
+    A: clientSettings?.speakerA || 'もっちゃん',
+    B: clientSettings?.speakerB || session?.meta.clientName || '',
+  };
 
   if (error) {
     return (
@@ -83,7 +101,7 @@ export default function SessionDetailPage() {
           </h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             {session.meta.date} &middot; {session.meta.clientName}
-            {session.meta.memo && ` &middot; ${session.meta.memo}`}
+            {session.meta.memo && ` · ${session.meta.memo}`}
           </p>
         </div>
         <StatusBadge status={session.status} />
@@ -97,17 +115,10 @@ export default function SessionDetailPage() {
             <span className="text-sm font-medium text-blue-700 dark:text-blue-300">処理中</span>
           </div>
           <div className="space-y-1.5 font-mono text-xs text-blue-600 dark:text-blue-400">
-            {session.progressMessage ? (
-              <div className="flex items-start gap-2">
-                <span className="text-blue-400 dark:text-blue-500">›</span>
-                <span>{session.progressMessage}</span>
-              </div>
-            ) : (
-              <div className="flex items-start gap-2">
-                <span className="text-blue-400 dark:text-blue-500">›</span>
-                <span>処理待ち...</span>
-              </div>
-            )}
+            <div className="flex items-start gap-2">
+              <span className="text-blue-400 dark:text-blue-500">›</span>
+              <span>{session.progressMessage || '処理待ち...'}</span>
+            </div>
           </div>
         </div>
       )}
@@ -139,13 +150,22 @@ export default function SessionDetailPage() {
       {/* コンテンツ */}
       {activeTab === 'summary' && session.summary ? (
         <div className="space-y-8">
-          <SummaryView summary={session.summary} />
+          <SummaryView summary={session.summary} speakerNames={speakerNames} />
           <MindMap summary={session.summary} />
+          {session.transcript && session.transcript.length > 0 && (
+            <SummaryCustomizer
+              sessionId={session.id}
+              clientName={session.meta.clientName}
+              onRegenerated={(newSummary: SessionSummary) =>
+                setSession((prev) => (prev ? { ...prev, summary: newSummary } : prev))
+              }
+            />
+          )}
         </div>
       ) : activeTab === 'summary' ? (
         <p className="text-slate-500 dark:text-slate-400">サマリーはまだ生成されていません</p>
       ) : session.transcript ? (
-        <TranscriptView transcript={session.transcript} />
+        <TranscriptView transcript={session.transcript} speakerNames={speakerNames} />
       ) : (
         <p className="text-slate-500 dark:text-slate-400">書き起こしはまだ完了していません</p>
       )}

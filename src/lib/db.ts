@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import type { Session, SessionStatus, Utterance, SessionSummary } from './types';
+import type { Session, SessionStatus, Utterance, SessionSummary, ClientSettings } from './types';
 
 let pool: Pool | null = null;
 
@@ -43,6 +43,17 @@ export async function initDb(): Promise<void> {
   await p.query(`ALTER TABLE shares ADD COLUMN IF NOT EXISTS masked_terms TEXT`);
   await p.query(`ALTER TABLE shares ADD COLUMN IF NOT EXISTS anonymized_summary_json TEXT`);
   await p.query(`ALTER TABLE shares ADD COLUMN IF NOT EXISTS anonymized_transcript_json TEXT`);
+
+  // クライアント設定テーブル
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS client_settings (
+      client_name TEXT PRIMARY KEY,
+      notes TEXT NOT NULL DEFAULT '',
+      speaker_a_name TEXT NOT NULL DEFAULT 'もっちゃん',
+      speaker_b_name TEXT NOT NULL DEFAULT '',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
 
   // 起動時: 前回のサーバー再起動で中断されたセッションをリセット
   const stuckResult = await p.query(
@@ -275,4 +286,46 @@ export async function getShareData(token: string): Promise<ShareData | null> {
 export async function getSessionByShareToken(token: string): Promise<Session | null> {
   const data = await getShareData(token);
   return data?.session ?? null;
+}
+
+export async function deleteSession(id: string): Promise<void> {
+  const p = getPool();
+  await p.query('DELETE FROM shares WHERE session_id = $1', [id]);
+  await p.query('DELETE FROM sessions WHERE id = $1', [id]);
+}
+
+export async function getClientSettings(clientName: string): Promise<ClientSettings> {
+  const p = getPool();
+  const res = await p.query('SELECT * FROM client_settings WHERE client_name = $1', [clientName]);
+  if (res.rows.length === 0) {
+    return { clientName, notes: '', speakerA: 'もっちゃん', speakerB: clientName };
+  }
+  const row = res.rows[0] as {
+    client_name: string;
+    notes: string;
+    speaker_a_name: string;
+    speaker_b_name: string;
+    updated_at: string;
+  };
+  return {
+    clientName: row.client_name,
+    notes: row.notes,
+    speakerA: row.speaker_a_name,
+    speakerB: row.speaker_b_name,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function upsertClientSettings(settings: Omit<ClientSettings, 'updatedAt'>): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `INSERT INTO client_settings (client_name, notes, speaker_a_name, speaker_b_name, updated_at)
+     VALUES ($1, $2, $3, $4, NOW())
+     ON CONFLICT (client_name) DO UPDATE SET
+       notes = EXCLUDED.notes,
+       speaker_a_name = EXCLUDED.speaker_a_name,
+       speaker_b_name = EXCLUDED.speaker_b_name,
+       updated_at = NOW()`,
+    [settings.clientName, settings.notes, settings.speakerA, settings.speakerB]
+  );
 }

@@ -1,6 +1,13 @@
-import type { SessionSummary } from '@/lib/types';
+import type { SessionSummary, SpeakerNames } from '@/lib/types';
 
-export function SummaryView({ summary }: { summary: SessionSummary }) {
+interface SummaryViewProps {
+  summary: SessionSummary;
+  speakerNames?: SpeakerNames;
+}
+
+export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
+  const speakerLabel = (s: 'A' | 'B') =>
+    speakerNames?.[s] ? speakerNames[s] : `話者${s}`;
   return (
     <div className="space-y-8">
       {summary.clientPains.length > 0 && (
@@ -94,7 +101,7 @@ export function SummaryView({ summary }: { summary: SessionSummary }) {
                   &ldquo;{quote.text}&rdquo;
                 </p>
                 <footer className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  &#8212; 話者{quote.speaker} &middot; {quote.context}
+                  &#8212; {speakerLabel(quote.speaker)} &middot; {quote.context}
                 </footer>
               </blockquote>
             ))}

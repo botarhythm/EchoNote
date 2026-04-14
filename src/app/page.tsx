@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { useSessionsStore } from '@/store/sessions';
 import { SessionCard } from '@/components/SessionCard';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { RailwayStatus } from '@/components/RailwayStatus';
+import { ClientTabs } from '@/components/ClientTabs';
+import { ClientSettingsPanel } from '@/components/ClientSettingsPanel';
 import type { Session } from '@/lib/types';
 
 const REFRESH_INTERVAL = Number(process.env.NEXT_PUBLIC_POLL_INTERVAL_MS) || 10000;
@@ -12,6 +14,9 @@ const REFRESH_INTERVAL = Number(process.env.NEXT_PUBLIC_POLL_INTERVAL_MS) || 100
 export default function HomePage() {
   const { sessions, setSessions, lastPolledAt, setLastPolledAt, isPolling, setPolling } =
     useSessionsStore();
+  const [activeClient, setActiveClient] = useState<string | null>(null);
+  const [managingClient, setManagingClient] = useState<string | null>(null);
+  const [adminMode, setAdminMode] = useState(false);
 
   const fetchSessions = useCallback(async () => {
     try {
@@ -51,8 +56,20 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, [fetchSessions, hasActiveSessions]);
 
+  // フィルタ後のセッション
+  const filteredSessions = sessions.filter(
+    (s) => activeClient === null || s.meta.clientName === activeClient
+  );
+
+  const handleManage = (client: string | null) => {
+    setManagingClient(client);
+    // 管理パネルを開いたらそのタブに切り替え
+    if (client) setActiveClient(client);
+  };
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
+      {/* ヘッダー */}
       <header className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
@@ -66,6 +83,21 @@ export default function HomePage() {
               最終更新: {lastPolledAt}
             </span>
           )}
+          {/* 管理モードトグル */}
+          <button
+            onClick={() => {
+              setAdminMode((v) => !v);
+              if (adminMode) setManagingClient(null);
+            }}
+            className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+              adminMode
+                ? 'border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-600 dark:bg-amber-900/20 dark:text-amber-400'
+                : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'
+            }`}
+            title="管理モード"
+          >
+            {adminMode ? '管理中' : '管理'}
+          </button>
           <button
             onClick={triggerPoll}
             disabled={isPolling}
@@ -77,6 +109,24 @@ export default function HomePage() {
         </div>
       </header>
 
+      {/* クライアントタブ */}
+      <ClientTabs
+        sessions={sessions}
+        activeClient={activeClient}
+        onSelect={setActiveClient}
+        managingClient={adminMode ? managingClient : null}
+        onManage={adminMode ? handleManage : () => {}}
+      />
+
+      {/* クライアント設定パネル */}
+      {adminMode && managingClient && (
+        <ClientSettingsPanel
+          clientName={managingClient}
+          onClose={() => setManagingClient(null)}
+        />
+      )}
+
+      {/* セッション一覧 */}
       {sessions.length === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-300 p-12 text-center dark:border-slate-700">
           <p className="text-slate-500 dark:text-slate-400">セッションがありません</p>
@@ -85,10 +135,22 @@ export default function HomePage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {sessions.map((session) => (
-            <SessionCard key={session.id} session={session} onRetry={fetchSessions} />
-          ))}
+        <div className="mt-4 space-y-3">
+          {filteredSessions.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+              このクライアントのセッションはありません
+            </p>
+          ) : (
+            filteredSessions.map((session) => (
+              <SessionCard
+                key={session.id}
+                session={session}
+                onRetry={fetchSessions}
+                onDelete={fetchSessions}
+                adminMode={adminMode}
+              />
+            ))
+          )}
         </div>
       )}
 

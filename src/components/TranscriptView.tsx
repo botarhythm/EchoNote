@@ -1,9 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import type { Utterance } from '@/lib/types';
+import type { Utterance, SpeakerNames } from '@/lib/types';
 
-export function TranscriptView({ transcript }: { transcript: Utterance[] }) {
+interface TranscriptViewProps {
+  transcript: Utterance[];
+  speakerNames?: SpeakerNames;
+}
+
+export function TranscriptView({ transcript, speakerNames }: TranscriptViewProps) {
+  const speakerLabel = (s: 'A' | 'B') =>
+    speakerNames?.[s] ? speakerNames[s].slice(0, 4) : s;
   const [searchQuery, setSearchQuery] = useState('');
 
   const filtered = searchQuery
@@ -41,13 +48,13 @@ export function TranscriptView({ transcript }: { transcript: Utterance[] }) {
           >
             <div className="flex shrink-0 flex-col items-center gap-0.5">
               <span
-                className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-xs font-bold ${
                   utterance.speaker === 'A'
                     ? 'bg-blue-100 text-blue-600 dark:bg-blue-500/30 dark:text-blue-300'
                     : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/30 dark:text-emerald-300'
                 }`}
               >
-                {utterance.speaker}
+                {speakerLabel(utterance.speaker)}
               </span>
               <span className="text-[10px] text-slate-400 dark:text-slate-500">{utterance.timestamp}</span>
             </div>
