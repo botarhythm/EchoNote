@@ -45,6 +45,16 @@ export function SessionCard({
         </div>
         <StatusBadge status={session.status} />
       </div>
+      {/* 進捗メッセージ（処理中のみ） */}
+      {['pending', 'transcribing', 'summarizing'].includes(session.status) && (
+        <div className="mt-3 flex items-start gap-2">
+          <span className="mt-0.5 inline-block h-2 w-2 flex-shrink-0 animate-pulse rounded-full bg-blue-400 dark:bg-blue-500" />
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {session.progressMessage || '処理待ち...'}
+          </p>
+        </div>
+      )}
+
       {session.error && (
         <p className="mt-3 text-sm text-red-500 dark:text-red-400">{session.error}</p>
       )}

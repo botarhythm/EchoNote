@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import type { Session } from '@/lib/types';
@@ -19,22 +19,31 @@ export default function SessionDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('summary');
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch(`/api/sessions/${params.id}`);
-        if (!res.ok) {
-          setError('セッションが見つかりません');
-          return;
-        }
-        const data = (await res.json()) as { session: Session };
-        setSession(data.session);
-      } catch {
-        setError('読み込みエラー');
+  const loadSession = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/sessions/${params.id}`);
+      if (!res.ok) {
+        setError('セッションが見つかりません');
+        return;
       }
+      const data = (await res.json()) as { session: Session };
+      setSession(data.session);
+    } catch {
+      setError('読み込みエラー');
     }
-    load();
   }, [params.id]);
+
+  useEffect(() => {
+    loadSession();
+  }, [loadSession]);
+
+  // 処理中は3秒ごとにポーリングして進捗を反映
+  useEffect(() => {
+    if (!session) return;
+    if (!['pending', 'transcribing', 'summarizing'].includes(session.status)) return;
+    const timer = setInterval(loadSession, 3000);
+    return () => clearInterval(timer);
+  }, [session?.status, loadSession]);
 
   if (error) {
     return (
@@ -79,6 +88,29 @@ export default function SessionDetailPage() {
         </div>
         <StatusBadge status={session.status} />
       </div>
+
+      {/* 処理中の進捗表示 */}
+      {['pending', 'transcribing', 'summarizing'].includes(session.status) && (
+        <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800/40 dark:bg-blue-900/20">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-400" />
+            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">処理中</span>
+          </div>
+          <div className="space-y-1.5 font-mono text-xs text-blue-600 dark:text-blue-400">
+            {session.progressMessage ? (
+              <div className="flex items-start gap-2">
+                <span className="text-blue-400 dark:text-blue-500">›</span>
+                <span>{session.progressMessage}</span>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2">
+                <span className="text-blue-400 dark:text-blue-500">›</span>
+                <span>処理待ち...</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* タブ切り替え */}
       <div className="mb-6 flex gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1 dark:border-slate-700 dark:bg-slate-800/50">

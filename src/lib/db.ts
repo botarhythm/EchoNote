@@ -38,7 +38,8 @@ export async function initDb(): Promise<void> {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
-  // プライバシー保護カラムの追加（既存テーブルへのマイグレーション）
+  // マイグレーション
+  await p.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS progress_message TEXT`);
   await p.query(`ALTER TABLE shares ADD COLUMN IF NOT EXISTS masked_terms TEXT`);
   await p.query(`ALTER TABLE shares ADD COLUMN IF NOT EXISTS anonymized_summary_json TEXT`);
   await p.query(`ALTER TABLE shares ADD COLUMN IF NOT EXISTS anonymized_transcript_json TEXT`);
@@ -55,6 +56,7 @@ interface SessionRow {
   transcript_json: string | null;
   summary_json: string | null;
   error_message: string | null;
+  progress_message: string | null;
   created_at: string;
   processed_at: string | null;
 }
@@ -79,7 +81,13 @@ function rowToSession(row: SessionRow): Session {
       : undefined,
     error: row.error_message || undefined,
     processedAt: row.processed_at || undefined,
+    progressMessage: row.progress_message || undefined,
   };
+}
+
+export async function updateProgress(id: string, message: string): Promise<void> {
+  const p = getPool();
+  await p.query('UPDATE sessions SET progress_message = $1 WHERE id = $2', [message, id]);
 }
 
 export async function upsertSession(session: Partial<Session> & { id: string }): Promise<void> {

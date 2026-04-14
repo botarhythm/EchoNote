@@ -58,4 +58,5 @@ export interface Session {
   summary?: SessionSummary;
   error?: string;
   processedAt?: string;
+  progressMessage?: string;
 }

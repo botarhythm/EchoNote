@@ -1,5 +1,5 @@
 import { listAudioFiles, downloadFile, renameFile, moveToProcessed } from './drive';
-import { initDb, upsertSession, getSession, updateStatus } from './db';
+import { initDb, upsertSession, getSession, updateStatus, updateProgress } from './db';
 import { transcribeAudio } from './gemini';
 import { generateSummary } from './claude';
 import path from 'path';
@@ -95,13 +95,24 @@ export async function poll(): Promise<{ found: number; processing: string[] }> {
 }
 
 async function processSession(fileId: string, originalFilename: string, mimeType: string) {
+  // 進捗コールバック（DB更新 + ログ）
+  const onProgress = async (msg: string) => {
+    console.log(`[EchoNote] ${msg}`);
+    await updateProgress(fileId, msg).catch(() => {});
+  };
+
   // 1. 文字起こし
   await updateStatus(fileId, 'transcribing');
+  await onProgress('📥 音声ファイルをダウンロード中...');
   const audioBuffer = await downloadFile(fileId);
-  const transcript = await transcribeAudio(audioBuffer, mimeType);
+  const sizeMB = (audioBuffer.length / 1024 / 1024).toFixed(1);
+  await onProgress(`📥 ダウンロード完了 (${sizeMB}MB) — 文字起こしを開始します`);
+
+  const transcript = await transcribeAudio(audioBuffer, mimeType, onProgress);
   await updateStatus(fileId, 'summarizing', { transcript });
 
   // 2. サマリー生成
+  await onProgress('🧠 AIがサマリーを生成中...');
   const summary = await generateSummary(transcript, originalFilename);
 
   // 3. サマリーからメタデータを構築してDBを更新
@@ -122,7 +133,9 @@ async function processSession(fileId: string, originalFilename: string, mimeType
     meta,
     summary,
     processedAt: new Date().toISOString(),
+    error: '',
   });
+  await updateProgress(fileId, '').catch(() => {});
 
   // 4. Driveのファイル名をリネーム
   try {

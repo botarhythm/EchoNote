@@ -37,11 +37,18 @@ export default function HomePage() {
     }
   }, [setPolling, fetchSessions]);
 
+  const hasActiveSessions = sessions.some((s) =>
+    ['pending', 'transcribing', 'summarizing'].includes(s.status)
+  );
+
   useEffect(() => {
     fetchSessions();
-    const interval = setInterval(fetchSessions, REFRESH_INTERVAL);
-    return () => clearInterval(interval);
   }, [fetchSessions]);
+
+  useEffect(() => {
+    const interval = setInterval(fetchSessions, hasActiveSessions ? 3000 : REFRESH_INTERVAL);
+    return () => clearInterval(interval);
+  }, [fetchSessions, hasActiveSessions]);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
