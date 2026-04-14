@@ -77,11 +77,11 @@ export function SessionCard({
 
         <div className="flex shrink-0 items-start gap-2">
           <StatusBadge status={session.status} />
-          {/* 削除ボタン（管理モード時のみ） */}
+          {/* 削除ボタン（管理モード時のみ・常時表示） */}
           {adminMode && !confirmDelete && (
             <button
               onClick={handleDeleteClick}
-              className="rounded p-1 text-slate-300 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100 dark:text-slate-600 dark:hover:text-red-400"
+              className="rounded p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 active:bg-red-100 dark:text-slate-500 dark:hover:bg-red-950/20 dark:hover:text-red-400"
               title="削除"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

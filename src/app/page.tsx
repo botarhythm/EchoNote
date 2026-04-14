@@ -68,42 +68,38 @@ export default function HomePage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
+    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
       {/* ヘッダー */}
-      <header className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+      <header className="mb-6 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-2xl">
             EchoNote
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Session Archive</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 sm:text-sm">
+            {lastPolledAt ? `更新: ${lastPolledAt}` : 'Session Archive'}
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          {lastPolledAt && (
-            <span className="text-xs text-slate-400 dark:text-slate-500">
-              最終更新: {lastPolledAt}
-            </span>
-          )}
+        <div className="flex shrink-0 items-center gap-2">
           {/* 管理モードトグル */}
           <button
             onClick={() => {
               setAdminMode((v) => !v);
               if (adminMode) setManagingClient(null);
             }}
-            className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+            className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors active:scale-95 ${
               adminMode
                 ? 'border-amber-400 bg-amber-50 text-amber-700 dark:border-amber-600 dark:bg-amber-900/20 dark:text-amber-400'
-                : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'
+                : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400'
             }`}
-            title="管理モード"
           >
             {adminMode ? '管理中' : '管理'}
           </button>
           <button
             onClick={triggerPoll}
             disabled={isPolling}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
           >
-            {isPolling ? 'チェック中...' : '今すぐチェック'}
+            {isPolling ? '...' : 'チェック'}
           </button>
           <ThemeToggle />
         </div>

@@ -294,6 +294,40 @@ export async function deleteSession(id: string): Promise<void> {
   await p.query('DELETE FROM sessions WHERE id = $1', [id]);
 }
 
+export interface ShareRecord {
+  token: string;
+  sessionId: string;
+  createdAt: string;
+  isAnonymized: boolean;
+  maskedTerms?: string[];
+}
+
+export async function getSharesBySession(sessionId: string): Promise<ShareRecord[]> {
+  const p = getPool();
+  const res = await p.query(
+    'SELECT token, session_id, created_at, masked_terms, anonymized_summary_json FROM shares WHERE session_id = $1 ORDER BY created_at DESC',
+    [sessionId]
+  );
+  return (res.rows as {
+    token: string;
+    session_id: string;
+    created_at: string;
+    masked_terms: string | null;
+    anonymized_summary_json: string | null;
+  }[]).map((row) => ({
+    token: row.token,
+    sessionId: row.session_id,
+    createdAt: row.created_at,
+    isAnonymized: !!row.anonymized_summary_json,
+    maskedTerms: row.masked_terms ? (JSON.parse(row.masked_terms) as string[]) : undefined,
+  }));
+}
+
+export async function revokeShare(token: string): Promise<void> {
+  const p = getPool();
+  await p.query('DELETE FROM shares WHERE token = $1', [token]);
+}
+
 export async function getClientSettings(clientName: string): Promise<ClientSettings> {
   const p = getPool();
   const res = await p.query('SELECT * FROM client_settings WHERE client_name = $1', [clientName]);

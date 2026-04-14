@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 
-export function ShareButton({ sessionId }: { sessionId: string }) {
+export function ShareButton({ sessionId, onCreated }: { sessionId: string; onCreated?: () => void }) {
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -37,6 +37,7 @@ export function ShareButton({ sessionId }: { sessionId: string }) {
       setShareUrl(url);
       await copyToClipboard(url);
       setShowModal(false);
+      onCreated?.();
     } finally {
       setLoading(false);
     }

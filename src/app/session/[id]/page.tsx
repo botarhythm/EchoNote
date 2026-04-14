@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { SummaryView } from '@/components/SummaryView';
 import { TranscriptView } from '@/components/TranscriptView';
 import { ShareButton } from '@/components/ShareButton';
+import { ShareLog } from '@/components/ShareLog';
 import { MindMap } from '@/components/MindMap';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { SummaryCustomizer } from '@/components/SummaryCustomizer';
@@ -22,14 +23,13 @@ export default function SessionDetailPage() {
   const [activeTab, setActiveTab] = useState<Tab>('summary');
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
+  // ShareLog のリフレッシュ用カウンター（共有リンク発行後インクリメント）
+  const [shareRefresh, setShareRefresh] = useState(0);
 
   const loadSession = useCallback(async () => {
     try {
       const res = await fetch(`/api/sessions/${params.id}`);
-      if (!res.ok) {
-        setError('セッションが見つかりません');
-        return;
-      }
+      if (!res.ok) { setError('セッションが見つかりません'); return; }
       const data = (await res.json()) as { session: Session };
       setSession(data.session);
     } catch {
@@ -37,11 +37,8 @@ export default function SessionDetailPage() {
     }
   }, [params.id]);
 
-  useEffect(() => {
-    loadSession();
-  }, [loadSession]);
+  useEffect(() => { loadSession(); }, [loadSession]);
 
-  // クライアント設定を読み込む（clientName確定後）
   useEffect(() => {
     const clientName = session?.meta.clientName;
     if (!clientName || clientName === '不明') return;
@@ -51,7 +48,6 @@ export default function SessionDetailPage() {
       .catch(() => {});
   }, [session?.meta.clientName]);
 
-  // 処理中は3秒ごとにポーリング
   useEffect(() => {
     if (!session) return;
     if (!['pending', 'transcribing', 'summarizing'].includes(session.status)) return;
@@ -83,7 +79,6 @@ export default function SessionDetailPage() {
     if (e.key === 'Escape') setEditingTitle(false);
   };
 
-  // speakerNames: クライアント設定があればそちら、なければ自動検出相当のデフォルト
   const speakerNames: SpeakerNames = {
     A: clientSettings?.speakerA || 'もっちゃん',
     B: clientSettings?.speakerB || session?.meta.clientName || '',
@@ -91,9 +86,9 @@ export default function SessionDetailPage() {
 
   if (error) {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-10">
+      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
         <p className="text-red-500 dark:text-red-400">{error}</p>
-        <Link href="/" className="mt-4 inline-block text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+        <Link href="/" className="mt-4 inline-block text-sm text-slate-500 dark:text-slate-400">
           &larr; 一覧に戻る
         </Link>
       </div>
@@ -102,119 +97,129 @@ export default function SessionDetailPage() {
 
   if (!session) {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-10">
+      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
         <p className="text-slate-500 dark:text-slate-400">読み込み中...</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
-      <div className="mb-6 flex items-center justify-between">
-        <Link href="/" className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
-          &larr; 一覧に戻る
+    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
+
+      {/* ── ナビゲーションバー ── */}
+      <div className="mb-6 flex items-center justify-between gap-2">
+        <Link
+          href="/"
+          className="flex items-center gap-1 rounded-lg px-2 py-2 text-sm text-slate-500 transition-colors hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+        >
+          <span className="text-base leading-none">←</span>
+          <span className="hidden sm:inline">一覧に戻る</span>
         </Link>
         <div className="flex items-center gap-2">
-          {session.status === 'done' && <ShareButton sessionId={session.id} />}
+          {session.status === 'done' && (
+            <ShareButton
+              sessionId={session.id}
+              onCreated={() => setShareRefresh((n) => n + 1)}
+            />
+          )}
           <ThemeToggle />
         </div>
       </div>
 
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          {/* タイトル：クリックで編集 */}
-          {editingTitle ? (
-            <div className="flex items-center gap-2">
-              <input
-                autoFocus
-                type="text"
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                onKeyDown={handleTitleKeyDown}
-                onBlur={handleTitleSave}
-                className="w-full rounded-lg border border-blue-400 bg-white px-3 py-1.5 text-2xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:border-blue-500 dark:bg-slate-800 dark:text-slate-100"
-              />
+      {/* ── タイトル & メタ ── */}
+      <div className="mb-6">
+        {editingTitle ? (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <input
+              autoFocus
+              type="text"
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onKeyDown={handleTitleKeyDown}
+              className="w-full rounded-lg border border-blue-400 bg-white px-3 py-2 text-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:border-blue-500 dark:bg-slate-800 dark:text-slate-100 sm:text-2xl"
+            />
+            <div className="flex gap-2">
               <button
-                onMouseDown={(e) => { e.preventDefault(); handleTitleSave(); }}
-                className="shrink-0 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
+                onClick={handleTitleSave}
+                className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 active:bg-blue-800 sm:flex-none"
               >
                 保存
               </button>
               <button
-                onMouseDown={(e) => { e.preventDefault(); setEditingTitle(false); }}
-                className="shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400"
+                onClick={() => setEditingTitle(false)}
+                className="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 active:bg-slate-100 dark:border-slate-600 dark:text-slate-400 sm:flex-none"
               >
                 取消
               </button>
             </div>
-          ) : (
-            <button
-              onClick={() => {
-                setTitleDraft(session.summary?.title || session.meta.clientName);
-                setEditingTitle(true);
-              }}
-              className="group flex items-center gap-2 text-left"
-              title="クリックして編集"
-            >
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                {session.summary?.title || session.meta.clientName}
-              </h1>
-              <span className="text-slate-300 opacity-0 transition-opacity group-hover:opacity-100 dark:text-slate-600">
-                ✎
-              </span>
-            </button>
-          )}
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            {session.meta.date} &middot; {session.meta.clientName}
-            {session.meta.memo && ` · ${session.meta.memo}`}
-          </p>
-        </div>
-        <StatusBadge status={session.status} />
+          </div>
+        ) : (
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start gap-2">
+                <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 sm:text-2xl">
+                  {session.summary?.title || session.meta.clientName}
+                </h1>
+                {/* タイトル編集ボタン：スマホでも常時表示 */}
+                {session.summary && (
+                  <button
+                    onClick={() => {
+                      setTitleDraft(session.summary?.title || session.meta.clientName);
+                      setEditingTitle(true);
+                    }}
+                    className="mt-1 shrink-0 rounded p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 active:bg-slate-200 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+                    title="タイトルを編集"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {session.meta.date} · {session.meta.clientName}
+                {session.meta.memo && ` · ${session.meta.memo}`}
+              </p>
+            </div>
+            <StatusBadge status={session.status} />
+          </div>
+        )}
       </div>
 
-      {/* 処理中の進捗表示 */}
+      {/* ── 処理中の進捗 ── */}
       {['pending', 'transcribing', 'summarizing'].includes(session.status) && (
         <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800/40 dark:bg-blue-900/20">
-          <div className="flex items-center gap-2 mb-3">
+          <div className="mb-2 flex items-center gap-2">
             <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-400" />
             <span className="text-sm font-medium text-blue-700 dark:text-blue-300">処理中</span>
           </div>
-          <div className="space-y-1.5 font-mono text-xs text-blue-600 dark:text-blue-400">
-            <div className="flex items-start gap-2">
-              <span className="text-blue-400 dark:text-blue-500">›</span>
-              <span>{session.progressMessage || '処理待ち...'}</span>
-            </div>
+          <div className="flex items-start gap-2 font-mono text-xs text-blue-600 dark:text-blue-400">
+            <span>›</span>
+            <span>{session.progressMessage || '処理待ち...'}</span>
           </div>
         </div>
       )}
 
-      {/* タブ切り替え */}
+      {/* ── タブ ── */}
       <div className="mb-6 flex gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1 dark:border-slate-700 dark:bg-slate-800/50">
-        <button
-          onClick={() => setActiveTab('summary')}
-          className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'summary'
-              ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100'
-              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-          }`}
-        >
-          サマリー
-        </button>
-        <button
-          onClick={() => setActiveTab('transcript')}
-          className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'transcript'
-              ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100'
-              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-          }`}
-        >
-          書き起こし
-        </button>
+        {(['summary', 'transcript'] as Tab[]).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`flex-1 rounded-md px-4 py-2.5 text-sm font-medium transition-colors ${
+              activeTab === tab
+                ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100'
+                : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            {tab === 'summary' ? 'サマリー' : '書き起こし'}
+          </button>
+        ))}
       </div>
 
-      {/* コンテンツ */}
+      {/* ── コンテンツ ── */}
       {activeTab === 'summary' && session.summary ? (
-        <div className="space-y-8">
+        <div className="space-y-6">
           <SummaryView summary={session.summary} speakerNames={speakerNames} />
           <MindMap summary={session.summary} />
           {session.transcript && session.transcript.length > 0 && (
@@ -226,6 +231,8 @@ export default function SessionDetailPage() {
               }
             />
           )}
+          {/* 共有リンク履歴 */}
+          <ShareLog sessionId={session.id} refreshTrigger={shareRefresh} />
         </div>
       ) : activeTab === 'summary' ? (
         <p className="text-slate-500 dark:text-slate-400">サマリーはまだ生成されていません</p>

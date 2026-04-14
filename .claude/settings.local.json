@@ -51,7 +51,19 @@
       "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\);console.log\\(j.DATABASE_PUBLIC_URL||'NOT FOUND'\\)}catch{console.log\\(d.substring\\(0,500\\)\\)}}\\)\")",
       "Bash(node:*)",
       "WebSearch",
-      "WebFetch(domain:ai.google.dev)"
+      "WebFetch(domain:ai.google.dev)",
+      "Bash(npm run:*)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(netstat -ano)",
+      "Bash(PORT=3001 node .next/standalone/server.js)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_snapshot",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "mcp__brave-search__brave_web_search",
+      "Bash(echo \"EXIT:$?\")",
+      "WebFetch(domain:docs.railway.com)",
+      "mcp__playwright__browser_evaluate"
     ]
   }
 }
