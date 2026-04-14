@@ -43,6 +43,20 @@ export async function initDb(): Promise<void> {
   await p.query(`ALTER TABLE shares ADD COLUMN IF NOT EXISTS masked_terms TEXT`);
   await p.query(`ALTER TABLE shares ADD COLUMN IF NOT EXISTS anonymized_summary_json TEXT`);
   await p.query(`ALTER TABLE shares ADD COLUMN IF NOT EXISTS anonymized_transcript_json TEXT`);
+
+  // 起動時: 前回のサーバー再起動で中断されたセッションをリセット
+  const stuckResult = await p.query(
+    `UPDATE sessions
+     SET status = 'error',
+         error_message = 'サーバー再起動により処理が中断されました。再処理してください。',
+         progress_message = ''
+     WHERE status IN ('pending', 'transcribing', 'summarizing')
+     RETURNING id`
+  );
+  if (stuckResult.rowCount && stuckResult.rowCount > 0) {
+    const ids = stuckResult.rows.map((r: { id: string }) => r.id).join(', ');
+    console.log(`[EchoNote] 中断セッションをリセット: ${ids}`);
+  }
 }
 
 interface SessionRow {
