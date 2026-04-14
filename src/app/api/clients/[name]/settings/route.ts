@@ -4,18 +4,20 @@ import type { ClientSettings } from '@/lib/types';
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { name: string } }
+  { params }: { params: Promise<{ name: string }> }
 ) {
-  const clientName = decodeURIComponent(params.name);
+  const { name } = await params;
+  const clientName = decodeURIComponent(name);
   const settings = await getClientSettings(clientName);
   return NextResponse.json({ settings });
 }
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { name: string } }
+  { params }: { params: Promise<{ name: string }> }
 ) {
-  const clientName = decodeURIComponent(params.name);
+  const { name } = await params;
+  const clientName = decodeURIComponent(name);
   const body = (await req.json()) as Partial<ClientSettings>;
 
   await upsertClientSettings({

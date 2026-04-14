@@ -5,9 +5,10 @@ import type { SummaryOptions } from '@/lib/types';
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession(params.id);
+  const { id } = await params;
+  const session = await getSession(id);
   if (!session) {
     return NextResponse.json({ error: 'セッションが見つかりません' }, { status: 404 });
   }
@@ -32,7 +33,7 @@ export async function POST(
       options
     );
 
-    await updateStatus(params.id, 'done', { summary });
+    await updateStatus(id, 'done', { summary });
 
     return NextResponse.json({ summary });
   } catch (err) {
