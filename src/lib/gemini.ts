@@ -235,7 +235,10 @@ async function transcribeChunk(
             ],
           },
         ],
-        config: { responseMimeType: 'application/json' },
+        config: {
+          responseMimeType: 'application/json',
+          maxOutputTokens: 65536, // デフォルト8192では密度の高い会話でJSONが途中で切れる
+        },
       }),
     `AI generateContent (chunk ${chunkIndex})`
   );
@@ -328,7 +331,7 @@ export async function transcribeAudio(
           ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: [{ role: 'user', parts: [{ fileData: { mimeType, fileUri } }, { text: buildPrompt(null) }] }],
-            config: { responseMimeType: 'application/json' },
+            config: { responseMimeType: 'application/json', maxOutputTokens: 65536 },
           }),
         'AI generateContent'
       );
@@ -348,7 +351,7 @@ export async function transcribeAudio(
           ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: [{ role: 'user', parts: [{ fileData: { mimeType, fileUri } }, { text: buildPrompt(null) }] }],
-            config: { responseMimeType: 'application/json' },
+            config: { responseMimeType: 'application/json', maxOutputTokens: 65536 },
           }),
         'AI generateContent'
       );
