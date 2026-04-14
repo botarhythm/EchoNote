@@ -1,20 +1,43 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import type { Session } from '@/lib/types';
 import { StatusBadge } from './StatusBadge';
 
-export function SessionCard({ session }: { session: Session }) {
+export function SessionCard({
+  session,
+  onRetry,
+}: {
+  session: Session;
+  onRetry?: () => void;
+}) {
+  const [retrying, setRetrying] = useState(false);
+
+  const handleRetry = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    setRetrying(true);
+    try {
+      await fetch(`/api/sessions/${session.id}`, { method: 'POST' });
+      onRetry?.();
+    } catch {
+      // ignore
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   const card = (
     <div className="group rounded-lg border border-slate-200 bg-white p-5 transition-colors hover:border-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800/50 dark:hover:border-slate-500 dark:hover:bg-slate-800">
       <div className="flex items-start justify-between">
         <div>
           <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-            {session.summary?.title || session.meta.clientName}
+            {session.summary?.title || session.meta.clientName || session.meta.originalFilename}
           </h3>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            {session.meta.date} &middot; {session.meta.clientName}
-            {session.meta.memo && ` &middot; ${session.meta.memo}`}
+            {session.meta.date && `${session.meta.date} · `}
+            {session.meta.clientName || session.meta.originalFilename}
+            {session.meta.memo && ` · ${session.meta.memo}`}
           </p>
           {session.summary?.sessionType && (
             <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{session.summary.sessionType}</p>
@@ -29,6 +52,17 @@ export function SessionCard({ session }: { session: Session }) {
         <p className="mt-3 line-clamp-2 text-sm text-slate-600 dark:text-slate-300">
           {session.summary.overallAssessment}
         </p>
+      )}
+      {session.status === 'error' && (
+        <div className="mt-3">
+          <button
+            onClick={handleRetry}
+            disabled={retrying}
+            className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+          >
+            {retrying ? '処理中...' : '再処理する'}
+          </button>
+        </div>
       )}
     </div>
   );

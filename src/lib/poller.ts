@@ -7,6 +7,23 @@ import path from 'path';
 const POLL_INTERVAL = Number(process.env.POLL_INTERVAL_MS) || 60000;
 let isRunning = false;
 
+export async function retrySession(sessionId: string): Promise<void> {
+  const session = await getSession(sessionId);
+  if (!session) throw new Error('セッションが見つかりません');
+
+  // ステータスをリセットしてエラーをクリア
+  await updateStatus(sessionId, 'pending', { error: '' });
+
+  processSession(sessionId, session.meta.originalFilename, session.meta.mimeType).catch(
+    async (err) => {
+      console.error(`[EchoNote] 再処理エラー (${sessionId}):`, err);
+      await updateStatus(sessionId, 'error', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  );
+}
+
 export function startPolling() {
   console.log(`[EchoNote] サーバーサイドポーリング開始 (間隔: ${POLL_INTERVAL}ms)`);
 
