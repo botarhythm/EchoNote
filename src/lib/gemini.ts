@@ -383,7 +383,15 @@ export async function transcribeAudio(
     // limit() で並列度を制御しつつ順次投入
     const task = limit(async () => {
       try {
-        const utterances = await transcribeChunk(ai, path, mimeType, idx, offsetSec, ctx);
+        let utterances = await transcribeChunk(ai, path, mimeType, idx, offsetSec, ctx);
+
+        // 空結果（JSON失敗・空レスポンス）は prevContext なしで1回再試行
+        if (utterances.length === 0 && existsSync(path)) {
+          console.log(`[EchoNote] チャンク ${idx + 1}/${total}: 空結果 → 再試行します`);
+          await onProgress?.(`🔄 チャンク ${idx + 1}/${total} を再試行中...`);
+          utterances = await transcribeChunk(ai, path, mimeType, idx, offsetSec, null);
+        }
+
         allUtterances[idx] = utterances;
         console.log(`[EchoNote] チャンク ${idx + 1}/${total} 完了 (${utterances.length} 発話)`);
         return utterances;
