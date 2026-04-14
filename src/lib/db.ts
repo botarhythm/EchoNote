@@ -38,6 +38,10 @@ export async function initDb(): Promise<void> {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // プライバシー保護カラムの追加（既存テーブルへのマイグレーション）
+  await p.query(`ALTER TABLE shares ADD COLUMN IF NOT EXISTS masked_terms TEXT`);
+  await p.query(`ALTER TABLE shares ADD COLUMN IF NOT EXISTS anonymized_summary_json TEXT`);
+  await p.query(`ALTER TABLE shares ADD COLUMN IF NOT EXISTS anonymized_transcript_json TEXT`);
 }
 
 interface SessionRow {
@@ -162,22 +166,82 @@ export async function updateStatus(
   await upsertSession({ id, status, ...data });
 }
 
-export async function createShare(sessionId: string): Promise<string> {
+export async function createShare(
+  sessionId: string,
+  privacy?: {
+    maskedTerms: string[];
+    anonymizedSummaryJson: string;
+    anonymizedTranscriptJson: string;
+  }
+): Promise<string> {
   const p = getPool();
-  const existing = await p.query('SELECT token FROM shares WHERE session_id = $1', [sessionId]);
-  if (existing.rows.length > 0) return existing.rows[0].token as string;
-
   const { randomBytes } = await import('crypto');
   const token = randomBytes(16).toString('hex');
-  await p.query('INSERT INTO shares (token, session_id) VALUES ($1, $2)', [token, sessionId]);
+
+  if (privacy) {
+    // プライバシー保護モード：常に新規トークンを発行
+    await p.query(
+      `INSERT INTO shares (token, session_id, masked_terms, anonymized_summary_json, anonymized_transcript_json)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        token,
+        sessionId,
+        JSON.stringify(privacy.maskedTerms),
+        privacy.anonymizedSummaryJson,
+        privacy.anonymizedTranscriptJson,
+      ]
+    );
+  } else {
+    // 通常モード：既存トークンを再利用
+    const existing = await p.query(
+      'SELECT token FROM shares WHERE session_id = $1 AND masked_terms IS NULL',
+      [sessionId]
+    );
+    if (existing.rows.length > 0) return existing.rows[0].token as string;
+
+    await p.query('INSERT INTO shares (token, session_id) VALUES ($1, $2)', [token, sessionId]);
+  }
+
   return token;
 }
 
-export async function getSessionByShareToken(token: string): Promise<Session | null> {
+export interface ShareData {
+  session: Session;
+  isAnonymized: boolean;
+  maskedTerms?: string[];
+}
+
+export async function getShareData(token: string): Promise<ShareData | null> {
   const p = getPool();
   const res = await p.query(
-    'SELECT s.* FROM sessions s JOIN shares sh ON s.id = sh.session_id WHERE sh.token = $1',
+    `SELECT s.*, sh.masked_terms, sh.anonymized_summary_json, sh.anonymized_transcript_json
+     FROM sessions s JOIN shares sh ON s.id = sh.session_id WHERE sh.token = $1`,
     [token]
   );
-  return res.rows.length > 0 ? rowToSession(res.rows[0] as SessionRow) : null;
+  if (res.rows.length === 0) return null;
+
+  const row = res.rows[0] as SessionRow & {
+    masked_terms: string | null;
+    anonymized_summary_json: string | null;
+    anonymized_transcript_json: string | null;
+  };
+  const session = rowToSession(row);
+
+  if (row.anonymized_summary_json) {
+    session.summary = JSON.parse(row.anonymized_summary_json) as Session['summary'];
+  }
+  if (row.anonymized_transcript_json) {
+    session.transcript = JSON.parse(row.anonymized_transcript_json) as Session['transcript'];
+  }
+
+  return {
+    session,
+    isAnonymized: !!row.anonymized_summary_json,
+    maskedTerms: row.masked_terms ? (JSON.parse(row.masked_terms) as string[]) : undefined,
+  };
+}
+
+export async function getSessionByShareToken(token: string): Promise<Session | null> {
+  const data = await getShareData(token);
+  return data?.session ?? null;
 }

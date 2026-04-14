@@ -1,6 +1,16 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { Utterance, SessionSummary } from './types';
 
+export function anonymizeTranscript(transcript: Utterance[], maskedTerms: string[]): Utterance[] {
+  return transcript.map((u) => ({
+    ...u,
+    text: maskedTerms.reduce(
+      (text, term) => text.split(term).join('●●'),
+      u.text
+    ),
+  }));
+}
+
 function getClient(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY が設定されていません');
@@ -69,4 +79,45 @@ ${transcriptText}
 
   const summary = JSON.parse(text) as SessionSummary;
   return summary;
+}
+
+export async function generateAnonymizedSummary(
+  originalSummary: SessionSummary,
+  maskedTerms: string[]
+): Promise<SessionSummary> {
+  const client = getClient();
+
+  const termsText = maskedTerms.map((t) => `- "${t}"`).join('\n');
+
+  const userPrompt = `以下のセッションサマリーを、指定された固有名詞を匿名化して再生成してください。
+
+【匿名化する語句】
+${termsText}
+
+【匿名化のルール】
+- 上記の語句はすべて別の表現に置き換える
+- 人名 → 「クライアント」「担当者」「Aさん」など文脈に合う表現
+- 企業名・サービス名 → 「A社」「当該サービス」など
+- 文章が自然に読めるよう適切に言い換える
+- JSONのキー名・構造は変えない
+- clientName フィールドも匿名化する
+
+【元のサマリーJSON】
+${JSON.stringify(originalSummary, null, 2)}
+
+JSONのみ返すこと。説明文・マークダウン・コードブロックは不要。`;
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 4096,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+
+  const text = response.content
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('');
+
+  return JSON.parse(text) as SessionSummary;
 }

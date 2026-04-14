@@ -1,24 +1,32 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 export function ShareButton({ sessionId }: { sessionId: string }) {
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [maskedTerms, setMaskedTerms] = useState<string[]>([]);
+  const [termInput, setTermInput] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleShare = async () => {
-    if (shareUrl) {
-      await copyToClipboard(shareUrl);
-      return;
-    }
+  useEffect(() => {
+    if (showModal) inputRef.current?.focus();
+  }, [showModal]);
 
+  const createShareLink = async (withPrivacy: boolean) => {
     setLoading(true);
     try {
+      const body: { sessionId: string; maskedTerms?: string[] } = { sessionId };
+      if (withPrivacy && maskedTerms.length > 0) {
+        body.maskedTerms = maskedTerms;
+      }
+
       const res = await fetch('/api/share', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) return;
 
@@ -26,6 +34,7 @@ export function ShareButton({ sessionId }: { sessionId: string }) {
       const url = `${window.location.origin}/share/${token}`;
       setShareUrl(url);
       await copyToClipboard(url);
+      setShowModal(false);
     } finally {
       setLoading(false);
     }
@@ -37,13 +46,133 @@ export function ShareButton({ sessionId }: { sessionId: string }) {
     setTimeout(() => setCopying(false), 2000);
   };
 
+  const addTerm = () => {
+    const term = termInput.trim();
+    if (term && !maskedTerms.includes(term)) {
+      setMaskedTerms((prev) => [...prev, term]);
+    }
+    setTermInput('');
+    inputRef.current?.focus();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addTerm();
+    }
+  };
+
+  if (shareUrl) {
+    return (
+      <button
+        onClick={() => copyToClipboard(shareUrl)}
+        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+      >
+        {copying ? 'コピーしました!' : 'URLをコピー'}
+      </button>
+    );
+  }
+
   return (
-    <button
-      onClick={handleShare}
-      disabled={loading}
-      className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-    >
-      {copying ? 'コピーしました!' : loading ? '作成中...' : shareUrl ? 'URLをコピー' : '共有リンク作成'}
-    </button>
+    <>
+      <button
+        onClick={() => setShowModal(true)}
+        disabled={loading}
+        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+      >
+        {loading ? '作成中...' : '共有リンク作成'}
+      </button>
+
+      {showModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false); }}
+        >
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="border-b border-slate-200 px-6 py-4 dark:border-slate-700">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                共有リンクの作成
+              </h2>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {/* プライバシー保護セクション */}
+              <div>
+                <p className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                  匿名化するキーワード
+                </p>
+                <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                  入力した語句をサマリーから除外・言い換えて共有します。守秘義務や個人情報の保護に。
+                </p>
+
+                <div className="flex gap-2">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={termInput}
+                    onChange={(e) => setTermInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="例：山田様、株式会社〇〇"
+                    className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-slate-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:placeholder-slate-500"
+                  />
+                  <button
+                    onClick={addTerm}
+                    disabled={!termInput.trim()}
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-40 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    追加
+                  </button>
+                </div>
+
+                {maskedTerms.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {maskedTerms.map((term) => (
+                      <span
+                        key={term}
+                        className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+                      >
+                        {term}
+                        <button
+                          onClick={() => setMaskedTerms((prev) => prev.filter((t) => t !== term))}
+                          className="ml-0.5 text-amber-600 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* アクションボタン */}
+              <div className="flex flex-col gap-2 pt-1">
+                {maskedTerms.length > 0 && (
+                  <button
+                    onClick={() => createShareLink(true)}
+                    disabled={loading}
+                    className="w-full rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-amber-700 disabled:opacity-50 dark:bg-amber-700 dark:hover:bg-amber-600"
+                  >
+                    {loading ? 'AIが匿名化中...' : `プライバシー保護して共有 (${maskedTerms.length}語句)`}
+                  </button>
+                )}
+                <button
+                  onClick={() => createShareLink(false)}
+                  disabled={loading}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                >
+                  {maskedTerms.length > 0 ? 'そのまま共有する' : '共有リンクを作成'}
+                </button>
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="text-sm text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+                >
+                  キャンセル
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

@@ -15,6 +15,7 @@ export default function SharePage() {
   const [session, setSession] = useState<Partial<Session> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('summary');
+  const [isAnonymized, setIsAnonymized] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -23,8 +24,9 @@ export default function SharePage() {
         setError('この共有リンクは無効です');
         return;
       }
-      const data = await res.json() as { session: Partial<Session> };
+      const data = await res.json() as { session: Partial<Session>; isAnonymized: boolean };
       setSession(data.session);
+      setIsAnonymized(data.isAnonymized ?? false);
     }
     load();
   }, [params.token]);
@@ -53,6 +55,12 @@ export default function SharePage() {
         </div>
         <ThemeToggle />
       </div>
+
+      {isAnonymized && (
+        <div className="mb-6 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800/40 dark:bg-amber-900/20 dark:text-amber-300">
+          <span>このセッションはプライバシー保護のため、一部の情報が匿名化されています。</span>
+        </div>
+      )}
 
       <h1 className="mb-1 text-2xl font-bold text-slate-900 dark:text-slate-100">
         {session.summary?.title}
