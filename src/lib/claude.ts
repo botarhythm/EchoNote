@@ -1,6 +1,51 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { Utterance, SessionSummary } from './types';
 
+export async function suggestPrivacyTerms(
+  summary: SessionSummary,
+  transcript: Utterance[]
+): Promise<string[]> {
+  const client = getClient();
+
+  // コスト削減のため書き起こしは先頭60発話のみ使用
+  const transcriptPreview = transcript
+    .slice(0, 60)
+    .map((u) => `${u.speaker}: ${u.text}`)
+    .join('\n');
+
+  const prompt = `以下のセッション情報を分析し、プライバシーや守秘義務の観点から匿名化を推奨する語句をリストアップしてください。
+
+【対象となる語句の基準】
+- 個人名（クライアント名・関係者名など）
+- 企業名・組織名・ブランド名
+- 具体的なサービス名・商品名（競合情報になりうるもの）
+- 個人を特定しうる固有名詞
+
+【サマリー】
+クライアント名: ${summary.clientName}
+タイトル: ${summary.title}
+課題: ${summary.clientPains.join('、')}
+
+【書き起こし抜粋】
+${transcriptPreview}
+
+JSONの配列のみ返すこと。重複なし。一般的すぎる語（「クライアント」「会社」など）は除外。空なら []。
+例: ["山田様", "株式会社〇〇", "△△アプリ"]`;
+
+  const response = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 512,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const text = response.content
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('');
+
+  return JSON.parse(text) as string[];
+}
+
 export function anonymizeTranscript(transcript: Utterance[], maskedTerms: string[]): Utterance[] {
   return transcript.map((u) => ({
     ...u,

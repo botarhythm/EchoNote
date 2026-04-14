@@ -9,6 +9,8 @@ export function ShareButton({ sessionId }: { sessionId: string }) {
   const [showModal, setShowModal] = useState(false);
   const [maskedTerms, setMaskedTerms] = useState<string[]>([]);
   const [termInput, setTermInput] = useState('');
+  const [suggestedTerms, setSuggestedTerms] = useState<string[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -46,13 +48,30 @@ export function ShareButton({ sessionId }: { sessionId: string }) {
     setTimeout(() => setCopying(false), 2000);
   };
 
-  const addTerm = () => {
-    const term = termInput.trim();
-    if (term && !maskedTerms.includes(term)) {
-      setMaskedTerms((prev) => [...prev, term]);
+  const fetchSuggestions = async () => {
+    setLoadingSuggestions(true);
+    setSuggestedTerms([]);
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/privacy-suggestions`);
+      if (res.ok) {
+        const { terms } = await res.json() as { terms: string[] };
+        setSuggestedTerms(terms.filter((t) => !maskedTerms.includes(t)));
+      }
+    } finally {
+      setLoadingSuggestions(false);
     }
-    setTermInput('');
-    inputRef.current?.focus();
+  };
+
+  const addTerm = (term?: string) => {
+    const value = (term ?? termInput).trim();
+    if (value && !maskedTerms.includes(value)) {
+      setMaskedTerms((prev) => [...prev, value]);
+      setSuggestedTerms((prev) => prev.filter((t) => t !== value));
+    }
+    if (!term) {
+      setTermInput('');
+      inputRef.current?.focus();
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -60,6 +79,10 @@ export function ShareButton({ sessionId }: { sessionId: string }) {
       e.preventDefault();
       addTerm();
     }
+  };
+
+  const removeTerm = (term: string) => {
+    setMaskedTerms((prev) => prev.filter((t) => t !== term));
   };
 
   if (shareUrl) {
@@ -116,7 +139,7 @@ export function ShareButton({ sessionId }: { sessionId: string }) {
                     className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-slate-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:placeholder-slate-500"
                   />
                   <button
-                    onClick={addTerm}
+                    onClick={() => addTerm()}
                     disabled={!termInput.trim()}
                     className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-40 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
                   >
@@ -133,7 +156,7 @@ export function ShareButton({ sessionId }: { sessionId: string }) {
                       >
                         {term}
                         <button
-                          onClick={() => setMaskedTerms((prev) => prev.filter((t) => t !== term))}
+                          onClick={() => removeTerm(term)}
                           className="ml-0.5 text-amber-600 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
                         >
                           ×
@@ -142,6 +165,46 @@ export function ShareButton({ sessionId }: { sessionId: string }) {
                     ))}
                   </div>
                 )}
+
+              {/* AI 提案セクション */}
+              <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    AIのおすすめ語句
+                  </p>
+                  <button
+                    onClick={fetchSuggestions}
+                    disabled={loadingSuggestions}
+                    className="rounded-md px-2.5 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-800"
+                  >
+                    {loadingSuggestions ? '分析中...' : suggestedTerms.length > 0 ? '再取得' : '提案を取得'}
+                  </button>
+                </div>
+
+                {loadingSuggestions && (
+                  <p className="text-xs text-slate-400 dark:text-slate-500">AIがセッション内容を分析しています...</p>
+                )}
+
+                {!loadingSuggestions && suggestedTerms.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {suggestedTerms.map((term) => (
+                      <button
+                        key={term}
+                        onClick={() => addTerm(term)}
+                        className="inline-flex items-center gap-1 rounded-full border border-dashed border-slate-300 px-3 py-1 text-xs text-slate-600 transition-colors hover:border-amber-400 hover:bg-amber-50 hover:text-amber-700 dark:border-slate-600 dark:text-slate-400 dark:hover:border-amber-600 dark:hover:bg-amber-900/20 dark:hover:text-amber-300"
+                      >
+                        + {term}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {!loadingSuggestions && suggestedTerms.length === 0 && (
+                  <p className="text-xs text-slate-400 dark:text-slate-500">
+                    「提案を取得」でAIが匿名化すべき語句を自動検出します
+                  </p>
+                )}
+              </div>
               </div>
 
               {/* アクションボタン */}
