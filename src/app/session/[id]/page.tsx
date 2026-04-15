@@ -7,11 +7,9 @@ import type { Session, SessionSummary, SpeakerNames, ClientSettings } from '@/li
 import { StatusBadge } from '@/components/StatusBadge';
 import { SummaryView } from '@/components/SummaryView';
 import { TranscriptView } from '@/components/TranscriptView';
-import { ShareButton } from '@/components/ShareButton';
-import { ShareLog } from '@/components/ShareLog';
 import { MindMap } from '@/components/MindMap';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { SummaryCustomizer } from '@/components/SummaryCustomizer';
+import { SessionActionBar } from '@/components/SessionActionBar';
 
 type Tab = 'summary' | 'transcript';
 
@@ -25,8 +23,6 @@ export default function SessionDetailPage() {
   const [titleDraft, setTitleDraft] = useState('');
   const [editingMeta, setEditingMeta] = useState(false);
   const [metaDraft, setMetaDraft] = useState({ clientName: '', date: '' });
-  // ShareLog のリフレッシュ用カウンター（共有リンク発行後インクリメント）
-  const [shareRefresh, setShareRefresh] = useState(0);
 
   const loadSession = useCallback(async () => {
     try {
@@ -141,15 +137,7 @@ export default function SessionDetailPage() {
           <span className="text-base leading-none">←</span>
           <span className="hidden sm:inline">一覧に戻る</span>
         </Link>
-        <div className="flex items-center gap-2">
-          {session.status === 'done' && (
-            <ShareButton
-              sessionId={session.id}
-              onCreated={() => setShareRefresh((n) => n + 1)}
-            />
-          )}
-          <ThemeToggle />
-        </div>
+        <ThemeToggle />
       </div>
 
       {/* ── タイトル & メタ ── */}
@@ -251,6 +239,19 @@ export default function SessionDetailPage() {
         )}
       </div>
 
+      {/* ── ダッシュボードアクションバー ── */}
+      {(session.status === 'done' || (session.transcript && session.transcript.length > 0)) && (
+        <SessionActionBar
+          sessionId={session.id}
+          clientName={session.meta.clientName}
+          hasTranscript={!!(session.transcript && session.transcript.length > 0)}
+          isDone={session.status === 'done'}
+          onRegenerated={(newSummary: SessionSummary) =>
+            setSession((prev) => (prev ? { ...prev, summary: newSummary } : prev))
+          }
+        />
+      )}
+
       {/* ── 処理中の進捗 ── */}
       {['pending', 'transcribing', 'summarizing'].includes(session.status) && (
         <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800/40 dark:bg-blue-900/20">
@@ -287,17 +288,6 @@ export default function SessionDetailPage() {
         <div className="space-y-6">
           <SummaryView summary={session.summary} speakerNames={speakerNames} />
           <MindMap summary={session.summary} />
-          {session.transcript && session.transcript.length > 0 && (
-            <SummaryCustomizer
-              sessionId={session.id}
-              clientName={session.meta.clientName}
-              onRegenerated={(newSummary: SessionSummary) =>
-                setSession((prev) => (prev ? { ...prev, summary: newSummary } : prev))
-              }
-            />
-          )}
-          {/* 共有リンク履歴 */}
-          <ShareLog sessionId={session.id} refreshTrigger={shareRefresh} />
         </div>
       ) : activeTab === 'summary' ? (
         <p className="text-slate-500 dark:text-slate-400">サマリーはまだ生成されていません</p>
