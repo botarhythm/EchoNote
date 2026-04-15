@@ -18,7 +18,6 @@ export async function GET(
     session: {
       meta: session.meta,
       summary: session.summary,
-      transcript: session.transcript,
       status: session.status,
     },
     isAnonymized,

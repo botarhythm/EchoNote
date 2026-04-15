@@ -20,11 +20,11 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
   return (
     <div className="space-y-8">
 
-      {/* クライアントの課題 */}
+      {/* 主要な課題・議題 */}
       {summary.clientPains.length > 0 && (
         <section>
           <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            クライアントの課題
+            主要な課題・議題
           </h3>
           <ul className="space-y-2">
             {summary.clientPains.map((pain, i) => (
@@ -148,11 +148,11 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
         </section>
       )}
 
-      {/* クライアントへの宿題 */}
+      {/* フォローアップ項目 */}
       {summary.homeworkForClient.length > 0 && (
         <section>
           <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            クライアントへの宿題
+            フォローアップ項目
           </h3>
           <ul className="space-y-2">
             {summary.homeworkForClient.map((hw, i) => (
@@ -201,19 +201,19 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
         </section>
       )}
 
-      {/* セッション全体の所感 */}
+      {/* 総評・所感 */}
       <section>
         <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-          セッション全体の所感
+          総評・所感
         </h3>
         <p className="leading-relaxed text-slate-700 dark:text-slate-200">{summary.overallAssessment}</p>
       </section>
 
-      {/* 次回セッションへの提案（detailed/deep モード） */}
+      {/* 次回への提案（detailed/deep モード） */}
       {summary.nextSessionSuggestions && summary.nextSessionSuggestions.length > 0 && (
         <section>
           <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            次回セッションへの提案
+            次回への提案
           </h3>
           <ul className="space-y-2">
             {summary.nextSessionSuggestions.map((suggestion, i) => (

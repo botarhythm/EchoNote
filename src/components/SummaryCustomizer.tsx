@@ -17,7 +17,8 @@ interface SummaryCustomizerProps {
   onRegenerated: (summary: SessionSummary) => void;
 }
 
-const DEPTHS: SummaryDepth[] = ['simple', 'standard', 'detailed', 'deep'];
+const DEPTHS_GENERAL: SummaryDepth[] = ['simple', 'standard', 'detailed'];
+const DEPTHS_BOTARHYTHM: SummaryDepth[] = ['simple', 'standard', 'detailed', 'deep'];
 const PATTERNS: SummaryPattern[] = ['action', 'psychology', 'coaching', 'strategy', 'problem'];
 
 export function SummaryCustomizer({ sessionId, clientName, onRegenerated }: SummaryCustomizerProps) {
@@ -28,6 +29,7 @@ export function SummaryCustomizer({ sessionId, clientName, onRegenerated }: Summ
   const [speakerB, setSpeakerB] = useState('');
 
   // 再生成オプション
+  const [botarythmMode, setBotarythmMode] = useState(false);
   const [depth, setDepth] = useState<SummaryDepth>('standard');
   const [patterns, setPatterns] = useState<SummaryPattern[]>([]);
   const [clientNotes, setClientNotes] = useState('');
@@ -82,7 +84,7 @@ export function SummaryCustomizer({ sessionId, clientName, onRegenerated }: Summ
     setRegenerating(true);
     setError(null);
     const speakerNames: SpeakerNames = { A: speakerA, B: speakerB };
-    const options: SummaryOptions = { depth, patterns, userNotes, clientNotes, speakerNames };
+    const options: SummaryOptions = { depth, patterns, userNotes, clientNotes, speakerNames, botarythmMode };
     try {
       const res = await fetch(`/api/sessions/${sessionId}/regenerate-summary`, {
         method: 'POST',
@@ -124,6 +126,37 @@ export function SummaryCustomizer({ sessionId, clientName, onRegenerated }: Summ
             </div>
           ) : (
             <div className="space-y-6 px-4 py-5">
+
+              {/* ── Botarhythm モード トグル ── */}
+              <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-3 dark:border-amber-800/40 dark:bg-amber-900/10">
+                <div>
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                    Botarhythm セッションとして分析
+                  </p>
+                  <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
+                    コーチング・心理・ビジネス戦略の3視点で深掘り。ディープダイブ深度が解放されます。
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    const next = !botarythmMode;
+                    setBotarythmMode(next);
+                    // deep深度はBotarhythmモード専用のためリセット
+                    if (!next && depth === 'deep') setDepth('standard');
+                  }}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                    botarythmMode ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'
+                  }`}
+                  role="switch"
+                  aria-checked={botarythmMode}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                      botarythmMode ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
 
               {/* ── 話者設定 ── */}
               <div>
@@ -191,14 +224,9 @@ export function SummaryCustomizer({ sessionId, clientName, onRegenerated }: Summ
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   深度
-                  {depth === 'deep' && (
-                    <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                      Botarhythm Studio モード
-                    </span>
-                  )}
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {DEPTHS.map((d) => (
+                  {(botarythmMode ? DEPTHS_BOTARHYTHM : DEPTHS_GENERAL).map((d) => (
                     <button
                       key={d}
                       onClick={() => setDepth(d)}

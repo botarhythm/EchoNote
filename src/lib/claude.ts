@@ -15,30 +15,30 @@ function parseJsonResponse<T>(raw: string): T {
 // ─── システムプロンプト ───────────────────────────────────────────────────────
 
 /**
- * 汎用システムプロンプト（standard/simple/detailed モード）
- * 「優秀な編集者」として機能する高品質サマリーの基本方針を定義
+ * 汎用システムプロンプト（一般的な会議・対話のサマリー用）
+ * Botarhythm固有の前提を持たず、あらゆる会議・対話録音に対応する
  */
-const GENERIC_SYSTEM_PROMPT = `あなたは卓越した編集力を持つセッション記録AIです。
-音声録音から文字起こしされた会話を精読し、読み手の思考整理と次の行動決定に直結するサマリーを作成します。
+const GENERIC_SYSTEM_PROMPT = `あなたは会議・対話の記録を整理・要約するAIアシスタントです。
+文字起こしから読み手がすぐに活用できる議事録・要約を作成します。
 
 【編集の原則】
-1. 表面的な要約ではなく、会話の「核心」を捉える
-   - 繰り返し登場するテーマ・言葉・懸念は重要なシグナルとして扱う
-   - 発言の文字通りの意味だけでなく、背景にある感情や前提を読む
-   - 「何を言ったか」だけでなく「なぜそれを言ったか」まで記述する
+1. 会話の「核心」を捉える
+   - 繰り返し登場するテーマ・懸念は重要なシグナルとして扱う
+   - 発言の文字通りの意味だけでなく、背景にある意図・文脈を読む
+   - 「何を言ったか」だけでなく「なぜそれが重要か」まで記述する
 
 2. 各項目は「情報密度の高い一文」として書く
    - 冗長な前置きや重複した情報は省く
    - 固有の状況・文脈が伝わる具体的な表現を選ぶ
-   - 一般論ではなく「このクライアントのこのセッション」に固有の記述にする
+   - 一般論ではなく「この会議・対話に固有の記述」にする
 
 3. 読み手が次にすべきことが直感的にわかる構成
-   - アクション・宿題は誰が・何を・なぜを明確に
+   - アクション・フォローアップは誰が・何を・なぜを明確に
    - 残課題と今回の成果を区別する
    - 優先度の高いものを先に書く
 
 JSONのみ返すこと。説明文・マークダウン・コードブロックは不要。
-クライアント名・日付・セッション種別は会話から推測すること。日付が不明な場合は "不明" としてください。`;
+参加者名・日付・会議種別は会話から推測すること。不明な場合は "不明" としてください。`;
 
 /**
  * Botarhythm Studio 専用プロンプト（Deep Dive モード専用）
@@ -226,22 +226,22 @@ nextActionsとhomeworkForClientを最優先で充実させること。
 
 // ─── JSON スキーマ定義 ────────────────────────────────────────────────────────
 
-/** 初回自動生成用（標準フィールドのみ） */
+/** 初回自動生成用（汎用・標準フィールドのみ） */
 const JSON_SCHEMA_BASIC = `{
-  "title": "セッションのテーマが伝わる具体的なタイトル",
-  "clientName": "会話から推測したクライアント名（不明なら '不明'）",
-  "date": "YYYY-MM-DD形式（会話やファイル名から推測。不明なら今日の日付）",
-  "sessionType": "体験セッション | メンタリング | 戦略セッション | 振り返り | その他",
-  "clientPains": ["課題1（背景・文脈を含む具体的な記述）", "課題2", "..."],
-  "adviceGiven": ["アドバイス1（なぜそのアドバイスかの背景を含む）", "アドバイス2", "..."],
+  "title": "会議・対話の内容が伝わる具体的なタイトル",
+  "clientName": "主要な参加者名またはグループ名（会話から推測。不明なら '不明'）",
+  "date": "YYYY-MM-DD形式（会話やファイル名から推測。不明なら '不明'）",
+  "sessionType": "会議 | 打ち合わせ | 1on1 | ブレスト | ヒアリング | コーチング | その他",
+  "clientPains": ["主要な議題・課題・論点1（背景・文脈を含む具体的な記述）", "論点2", "..."],
+  "adviceGiven": ["決定事項・提案・結論1（根拠や背景を添えて）", "項目2", "..."],
   "nextActions": [
-    { "task": "具体的なタスク名", "owner": "もっちゃん | クライアント | 両者", "deadline": "任意" }
+    { "task": "具体的なアクション", "owner": "担当者名または '未定'", "deadline": "任意" }
   ],
-  "homeworkForClient": ["宿題1（目的・期待成果を含む）", "宿題2", "..."],
+  "homeworkForClient": ["フォローアップ項目1（目的・期待成果を含む）", "項目2", "..."],
   "keyQuotes": [
     { "speaker": "A | B", "text": "発言内容（できるだけ原文に近く）", "context": "この発言がなぜ重要か・何を示しているか" }
   ],
-  "overallAssessment": "セッションの手応え・成果・残課題・次回への展望を含む所感。"
+  "overallAssessment": "会議・対話の成果・残課題・次回への展望を含む所感。"
 }`;
 
 /** カスタム再生成用（詳細/deepモードで使われる拡張フィールド付き） */
@@ -333,13 +333,12 @@ function getClient(): Anthropic {
 
 // ─── サマリー生成（初回自動） ──────────────────────────────────────────────────
 
-/** 初回自動サマリー: 汎用プロンプト + 話者自動検出 */
+/** 初回自動サマリー: 汎用プロンプト（Botarhythm固有の前提なし） */
 export async function generateSummary(
   transcript: Utterance[],
   originalFilename: string
 ): Promise<SessionSummary> {
   const client = getClient();
-  const speakerNames = autoDetectSpeakers(transcript);
 
   const transcriptText = transcript
     .map((u) => `[${u.timestamp}] 話者${u.speaker}: ${u.text}`)
@@ -347,7 +346,6 @@ export async function generateSummary(
 
   const userPrompt = `【元のファイル名】
 ${originalFilename}
-${buildSpeakerContext(speakerNames)}
 
 【文字起こし】
 ${transcriptText}
@@ -380,8 +378,10 @@ export async function generateCustomSummary(
 ): Promise<SessionSummary> {
   const client = getClient();
 
-  // deep モードのみ Botarhythm Studio コンテキストを使用
-  const systemPrompt = options.depth === 'deep' ? BOTARHYTHM_SYSTEM_PROMPT : GENERIC_SYSTEM_PROMPT;
+  // Botarhythmモード または deep 深度のとき Botarhythm Studio コンテキストを使用
+  const systemPrompt = (options.botarythmMode || options.depth === 'deep')
+    ? BOTARHYTHM_SYSTEM_PROMPT
+    : GENERIC_SYSTEM_PROMPT;
 
   // detailed/deep では拡張スキーマを使用
   const jsonSchema = (options.depth === 'detailed' || options.depth === 'deep')

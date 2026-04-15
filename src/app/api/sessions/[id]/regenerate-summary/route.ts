@@ -23,7 +23,8 @@ export async function POST(
     patterns: body.patterns ?? [],
     userNotes: body.userNotes ?? '',
     clientNotes: body.clientNotes ?? '',
-    speakerNames: body.speakerNames ?? { A: 'もっちゃん', B: '' },
+    speakerNames: body.speakerNames ?? { A: '', B: '' },
+    botarythmMode: body.botarythmMode ?? false,
   };
 
   try {

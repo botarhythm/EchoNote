@@ -89,6 +89,7 @@ export interface SummaryOptions {
   userNotes: string;       // このセッション限りの補正メモ
   clientNotes: string;     // クライアント共通の補正メモ
   speakerNames: SpeakerNames;
+  botarythmMode?: boolean; // Botarhythm Studio 専用分析モード
 }
 
 export const DEPTH_LABELS: Record<SummaryDepth, string> = {
