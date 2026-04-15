@@ -14,28 +14,68 @@ function parseJsonResponse<T>(raw: string): T {
 
 // ─── システムプロンプト ───────────────────────────────────────────────────────
 
-/** 汎用（deep以外で使用） */
-const GENERIC_SYSTEM_PROMPT = `あなたはプロフェッショナルなセッション議事録作成AIです。
-音声録音から文字起こしされた会話を分析し、構造化されたサマリーを作成します。
-会話の内容からクライアント名・セッション日付・セッション種別を推測してください。
-日付が不明な場合は "不明" としてください。
-JSONのみ返すこと。説明文・マークダウン・コードブロックは不要。`;
+/**
+ * 汎用システムプロンプト（standard/simple/detailed モード）
+ * 「優秀な編集者」として機能する高品質サマリーの基本方針を定義
+ */
+const GENERIC_SYSTEM_PROMPT = `あなたは卓越した編集力を持つセッション記録AIです。
+音声録音から文字起こしされた会話を精読し、読み手の思考整理と次の行動決定に直結するサマリーを作成します。
 
-/** Botarhythm Studio専用（deep モード） */
-const BOTARHYTHM_SYSTEM_PROMPT = `あなたはBotarhythm Studioのセッション議事録作成AIです。
-Botarhythm Studioはスモールビジネス向けDXアドバイザリーサービスです。
-もっちゃん（元沢信昭）がアドバイザーとして、クライアントのデジタル変革を支援します。
+【編集の原則】
+1. 表面的な要約ではなく、会話の「核心」を捉える
+   - 繰り返し登場するテーマ・言葉・懸念は重要なシグナルとして扱う
+   - 発言の文字通りの意味だけでなく、背景にある感情や前提を読む
+   - 「何を言ったか」だけでなく「なぜそれを言ったか」まで記述する
 
-サービスの特徴:
-- 「依存させない」哲学：クライアントが自走できる状態を目指す
-- 丸投げではなく伴走型のサポート
-- 現場の痛みに寄り添う当事者目線
-- デジタル変革の実践的アドバイス
+2. 各項目は「情報密度の高い一文」として書く
+   - 冗長な前置きや重複した情報は省く
+   - 固有の状況・文脈が伝わる具体的な表現を選ぶ
+   - 一般論ではなく「このクライアントのこのセッション」に固有の記述にする
 
-この文脈を踏まえ、コーチングセッションとしての深みある分析を行ってください。
-会話の内容からクライアント名・セッション日付・セッション種別を推測してください。
-日付が不明な場合は "不明" としてください。
-JSONのみ返すこと。説明文・マークダウン・コードブロックは不要。`;
+3. 読み手が次にすべきことが直感的にわかる構成
+   - アクション・宿題は誰が・何を・なぜを明確に
+   - 残課題と今回の成果を区別する
+   - 優先度の高いものを先に書く
+
+JSONのみ返すこと。説明文・マークダウン・コードブロックは不要。
+クライアント名・日付・セッション種別は会話から推測すること。日付が不明な場合は "不明" としてください。`;
+
+/**
+ * Botarhythm Studio 専用プロンプト（Deep Dive モード専用）
+ * コーチング・心理・ビジネス戦略の3視点から徹底分析するモード
+ */
+const BOTARHYTHM_SYSTEM_PROMPT = `あなたはBotarhythm Studioの専属セッションアナリストです。
+もっちゃん（元沢信昭）が提供するDXアドバイザリーセッションを、コーチング・心理・ビジネス戦略の3視点から徹底分析します。
+
+【Botarhythm Studioのコンテキスト】
+- サービス哲学：「依存させない」——クライアントが自走できる状態になることが最終目標
+- アプローチ：丸投げでなく伴走型。クライアントの現場感を尊重しながら変革を促す
+- もっちゃんの強み：当事者目線でデジタル変革の痛みに共感し、実践的な処方箋を示す
+- 典型的なセッションの流れ：課題の明確化 → 認知の拡張 → 行動への落とし込み
+
+【深層分析の視点】
+1. 発言の行間を読む
+   - 何を言ったかではなく「どう言ったか」「何を言わなかったか」に注目する
+   - 躊躇・言い直し・繰り返し・沈黙の直後の発言は心理的シグナル
+   - クライアントの自己評価と客観的状況のギャップを捉える
+
+2. セッションの感情的・認知的アーク
+   - セッション開始時と終了時でクライアントの状態がどう変化したか
+   - 「空気が変わった瞬間」——言葉・質問・沈黙がきっかけになった転換点
+   - エネルギーが高まった場面と下がった場面の両方を記録する
+
+3. コーチングの効果を評価する
+   - もっちゃんのどの介入（質問・リフレーム・チャレンジ・共感）が機能したか
+   - クライアントが「腹落ちした瞬間」を特定する
+   - 次回以降のセッション設計に活かせる観察を記録する
+
+4. ビジネス課題の構造を捉える
+   - 表面的な困りごとの下にある根本的な問い・構造的問題を明確にする
+   - 現在地・目指す状態・ギャップを整理する
+   - 変革の優先度と実行可能性の両面から評価する
+
+JSONのみ返すこと。説明文・マークダウン・コードブロックは不要。
+日付が不明な場合は "不明" としてください。`;
 
 // ─── 話者自動検出 ─────────────────────────────────────────────────────────────
 
@@ -64,51 +104,173 @@ function buildSpeakerContext(speakerNames: SpeakerNames): string {
 }
 
 const DEPTH_INSTRUCTIONS: Record<SummaryDepth, string> = {
-  simple: `【深度: シンプル】
-重要なアクションアイテムと主要課題のみを簡潔にまとめてください。
-各フィールドは2〜3項目以内。overallAssessmentは1文。`,
+  simple: `【深度: シンプル — 意思決定者のための2分ブリーフィング】
 
-  standard: `【深度: スタンダード】
-主要な課題・アドバイス・ネクストアクションをバランスよくまとめてください。
-各フィールドは3〜5項目。overallAssessmentは2〜3文。`,
+目的：読み手が「今日の最重要事項」を2分で把握できること。
 
-  detailed: `【深度: 詳細】
-セッション全体を詳しくカバーしてください。
-発言の背景や文脈も含め、各フィールドは5〜8項目。
-keyQuotesは印象的な発言を5つ以上拾ってください。
-overallAssessmentは3〜4文で深みある所感を書いてください。`,
+出力の要件：
+- clientPains：最重要課題のみ2〜3項目。背景説明より「何が問題か」を優先
+- adviceGiven：最も重要な提案のみ2〜3項目。「何をすべきか」だけを端的に
+- nextActions：次のアクションを明確に（期限・担当があれば必ず記載）
+- homeworkForClient：クライアントがすぐやるべき1〜2項目
+- keyQuotes：省略可（特に印象的な発言が1つあれば可）
+- overallAssessment：1〜2文で「今日のセッションの一言要約」
+- sessionMoments / coachingInsights / underlyingThemes / clientStateShift / nextSessionSuggestions：空配列または省略
 
-  deep: `【深度: ディープダイブ】
-セッションを徹底的に分析してください。
-クライアントの発言の行間・感情の変化・暗黙の前提まで読み取り、
-各フィールドは8項目以上（重要なものは漏らさず）。
-keyQuotesは8つ以上、各quoteにコンテキストを詳しく記述。
-overallAssessmentは5文以上で、今後のセッション設計への示唆も含めてください。`,
+タイトルは「何のセッションだったか」がわかるシンプルな表現で。`,
+
+  standard: `【深度: スタンダード — 全体像を把握する実用サマリー】
+
+目的：セッションの全体像を整理し、次回に向けた準備に使えること。
+
+出力の要件：
+- clientPains：3〜5項目。「何が課題か」＋「その背景・文脈」をセットで記述
+- adviceGiven：3〜5項目。「何を提案したか」＋「なぜそのアドバイスか」を添える
+- nextActions：具体的なタスクとオーナーを明確に。期限は把握できる範囲で
+- homeworkForClient：3〜4項目。目的（なぜやるか）も1文で添える
+- keyQuotes：2〜3発言。contextで「この発言がなぜ印象的か」を説明
+- overallAssessment：2〜3文。セッションの手応え・残課題・次回への展望
+- sessionMoments / underlyingThemes / nextSessionSuggestions：あれば記載（省略可）
+- coachingInsights / clientStateShift：省略
+
+タイトルは「セッションのテーマ」が伝わる表現で（例：「自走への第一歩 — 業務フロー見直しセッション」）。`,
+
+  detailed: `【深度: 詳細 — 包括的なセッションレポート】
+
+目的：セッションの内容を詳細に記録し、関係者への共有・将来の参照に耐えること。
+
+出力の要件：
+- clientPains：5〜8項目。「主訴」「背景要因」「感情的インパクト」の3層で記述
+- adviceGiven：5〜8項目。提案の根拠・前提条件・クライアントの反応も含める
+- nextActions：すべてのアクションを漏れなく。期限・担当・背景まで記載
+- homeworkForClient：4〜6項目。実行手順・期待成果・想定される障壁も添える
+- keyQuotes：5〜7発言。contextは「この発言が何を示しているか」を詳しく
+- overallAssessment：3〜4文。セッションの成果・残課題・関係性の変化・次回への提言
+- sessionMoments：3つ以上（必須）。セッションの流れを形作った転換点を記録
+- underlyingThemes：2〜4項目（必須）。表面的な課題の下にある深層テーマ
+- nextSessionSuggestions：3項目以上（必須）。次回アジェンダの具体的な候補
+- coachingInsights・clientStateShift：あれば記載
+
+タイトルはセッションの核心を示す示唆に富む表現で（例：「"丸投げ体質"からの脱却 — 自走意識が芽生えた転換点」）。`,
+
+  deep: `【深度: ディープダイブ — Botarhythm Studio 深層分析モード】
+
+目的：このセッションを将来のコーチング設計に活かす資産として記録すること。
+表面的な要約ではなく、クライアントの思考・感情・行動パターンの深層まで読み込む。
+
+■ 分析の深さについて
+- 発言内容だけでなく「言葉の選び方」「躊躇した箇所」「繰り返されたテーマ」まで読む
+- クライアントの「本当の問い」を探す（表面的な質問の下にある、まだ言語化されていない問い）
+- セッション中の感情的変化・エネルギーの変化を時系列で捉える
+- もっちゃんの介入（質問・沈黙・リフレーム・チャレンジ）がどの場面で機能したか評価する
+- 今回のセッションで扱えなかった「次の核心テーマ」を予測する
+
+■ 出力の要件
+- clientPains：8項目以上。「主訴 → 背景要因 → 根本原因 → 心理的インパクト」の流れで記述。優先度を示す
+- adviceGiven：8項目以上。提案の意図・前提・クライアントの受け取り方・有効性の評価まで含める
+- nextActions：すべてのアクションを漏れなく。「なぜ今これが重要か」も添える
+- homeworkForClient：実行可能性・クライアントの抵抗感・成功の定義まで含める
+- keyQuotes：8発言以上。各contextで「この発言がセッションの何を示す分水嶺だったか」を分析
+- overallAssessment：5文以上。セッションの成果・コーチング効果・クライアントとの関係深化・今後の設計への示唆を含む
+- sessionMoments：5つ以上（必須）。typeを正確に分類し、significanceでコーチングへの含意を説明
+- coachingInsights：必須・詳細記述。「どの介入が機能したか」「機能しなかった場面とその理由」「次回以降の関わり方への示唆」
+- underlyingThemes：3〜6項目（必須）。「クライアントがまだ言語化できていない問い」まで含める
+- clientStateShift：必須・詳細記述。開始時の状態 → セッション中の変化 → 終了時の状態を具体的に描写
+- nextSessionSuggestions：4項目以上（必須）。各提案に「なぜ今それを扱うべきか」の根拠を添える
+
+タイトルはセッションの深層テーマを象徴する、記憶に残る表現で（例：「"わかってるけどできない"の正体 — 自己効力感の再構築に向けた転換点」）。`,
 };
 
 const PATTERN_INSTRUCTIONS: Record<SummaryPattern, string> = {
-  action:     `- アクション重視: nextActionsとhomeworkForClientを特に詳しく。期限・担当・具体的手順まで掘り下げること。`,
-  psychology: `- クライアント心理: クライアントの感情状態・モチベーション・ブロックや恐れを分析。clientPainsに心理的側面を含めること。`,
-  coaching:   `- コーチング観点: もっちゃんの介入・質問・リフレームの効果を評価。クライアントの気づきと変化に注目すること。`,
-  strategy:   `- ビジネス戦略: 事業課題・市場環境・競合・ROIの観点でアドバイスを整理。adviceGivenにビジネスインパクトを含めること。`,
-  problem:    `- 課題分析: 根本原因・因果関係・優先度の観点でclientPainsを深掘り。表面的な問題と本質的な問題を区別すること。`,
+  action: `【重点パターン: アクション重視】
+nextActionsとhomeworkForClientを最優先で充実させること。
+- nextActionsの各項目：「誰が・何を・いつまでに・どのように達成するか」まで具体化。期限は必ず記載（未定なら「次回セッションまで」など）
+- homeworkForClientの各項目：「やること」だけでなく「なぜやるか（目的）」「成功の定義」「想定される障壁と対処法」を含める
+- adviceGivenはすべて「行動可能な提案」に落とし込む。「〜を考える」ではなく「〜をする」形で
+- overallAssessmentは「今日決まったこと」と「次回までにやること」を中心に締める`,
+
+  psychology: `【重点パターン: クライアント心理】
+クライアントの内面状態の分析を最優先とすること。
+- clientPainsにはクライアントの感情状態・心理的ブロック・恐れ・自己イメージを含める。「何が怖いか」「何を避けているか」を明示
+- clientStateShift（必須）：セッション前後でのエネルギー・確信度・意欲の変化を具体的に描写。「〜だったが〜に変化した」という形で
+- keyQuotesはクライアントの内面が滲む発言を優先。躊躇・言い直し・感情的な発言を選ぶ
+- underlyingThemesに心理的なパターン（自己評価・他者承認欲求・完璧主義傾向など）を含める
+- overallAssessmentでクライアントの「今の段階」（認識段階・葛藤段階・変化準備段階など）を評価する`,
+
+  coaching: `【重点パターン: コーチング観点】
+コーチングの効果と有効性の分析を最優先とすること。
+- coachingInsights（必須・詳細）：もっちゃんの介入を場面ごとに評価する。「〇〇という質問でクライアントが〜に気づいた」「〜のリフレームが〜の変化をもたらした」という具体的な分析
+- sessionMomentsに「空気が変わった瞬間」を優先して記録。typeをbreakthroughやinsightで積極的に使う
+- keyQuotesに「クライアントが腹落ちした瞬間の発言」を含める
+- nextSessionSuggestionsはコーチングの継続性を意識した提案（今回の気づきをどう深めるか）
+- overallAssessmentで「このセッションでクライアントが変わったこと」と「次回に持ち越す課題」を区別する`,
+
+  strategy: `【重点パターン: ビジネス戦略】
+ビジネス課題の構造的分析を最優先とすること。
+- adviceGivenの各項目：「何をすべきか」＋「ビジネスインパクト（何が変わるか）」＋「優先度・緊急度の評価」を含める
+- nextActionsに期限・担当に加え「なぜ今これが最優先か」の根拠を添える
+- underlyingThemesにビジネス課題の構造的問題（組織・プロセス・技術・人材のどこに根本原因があるか）を明記
+- clientPainsを「表面症状」と「構造的問題」に区別して記述
+- overallAssessmentで「現在地」「目指す状態」「最大のボトルネック」を整理する
+- nextSessionSuggestionsは具体的なビジネスイシューを扱う（「〜の意思決定をする」「〜の計画を立てる」など）`,
+
+  problem: `【重点パターン: 課題分析】
+問題の根本原因の特定を最優先とすること。
+- clientPainsを「表面症状 → 背景要因 → 根本原因」の3層で分析。優先度の高い順に並べる
+- underlyingThemes（必須）：「本当に解くべき問い」を明確にする。「〜という問題があるが、本質的な問いは〜ではないか」という形で
+- 「解決すべき問題」と「受け入れるべき制約」を区別して記述
+- 問題間の因果関係・連鎖を意識する（AがBの原因でありCにも影響している、など）
+- adviceGivenは「対症療法」と「根本対処」を区別して提案する
+- overallAssessmentで「今日明確になった問い」と「まだ答えが出ていない問い」を整理する`,
 };
 
-const JSON_SCHEMA = `{
-  "title": "セッションを一言で表すタイトル",
+// ─── JSON スキーマ定義 ────────────────────────────────────────────────────────
+
+/** 初回自動生成用（標準フィールドのみ） */
+const JSON_SCHEMA_BASIC = `{
+  "title": "セッションのテーマが伝わる具体的なタイトル",
   "clientName": "会話から推測したクライアント名（不明なら '不明'）",
   "date": "YYYY-MM-DD形式（会話やファイル名から推測。不明なら今日の日付）",
-  "sessionType": "体験セッション | メンタリング | その他",
-  "clientPains": ["課題1", "課題2", ...],
-  "adviceGiven": ["アドバイス1", "アドバイス2", ...],
+  "sessionType": "体験セッション | メンタリング | 戦略セッション | 振り返り | その他",
+  "clientPains": ["課題1（背景・文脈を含む具体的な記述）", "課題2", "..."],
+  "adviceGiven": ["アドバイス1（なぜそのアドバイスかの背景を含む）", "アドバイス2", "..."],
   "nextActions": [
-    { "task": "タスク名", "owner": "もっちゃん | クライアント | 両者", "deadline": "任意" }
+    { "task": "具体的なタスク名", "owner": "もっちゃん | クライアント | 両者", "deadline": "任意" }
   ],
-  "homeworkForClient": ["宿題1", "宿題2", ...],
+  "homeworkForClient": ["宿題1（目的・期待成果を含む）", "宿題2", "..."],
   "keyQuotes": [
-    { "speaker": "A | B", "text": "発言内容", "context": "なぜ印象的か" }
+    { "speaker": "A | B", "text": "発言内容（できるだけ原文に近く）", "context": "この発言がなぜ重要か・何を示しているか" }
   ],
-  "overallAssessment": "セッション全体の所感。"
+  "overallAssessment": "セッションの手応え・成果・残課題・次回への展望を含む所感。"
+}`;
+
+/** カスタム再生成用（詳細/deepモードで使われる拡張フィールド付き） */
+const JSON_SCHEMA_EXTENDED = `{
+  "title": "セッションの深層テーマを象徴する示唆に富むタイトル",
+  "clientName": "会話から推測したクライアント名（不明なら '不明'）",
+  "date": "YYYY-MM-DD形式（会話やファイル名から推測。不明なら今日の日付）",
+  "sessionType": "体験セッション | メンタリング | 戦略セッション | 振り返り | その他",
+  "clientPains": ["課題1（主訴・背景要因・感情的インパクトを含む記述）", "課題2", "..."],
+  "adviceGiven": ["アドバイス1（提案の意図・根拠・クライアントの反応を含む）", "アドバイス2", "..."],
+  "nextActions": [
+    { "task": "具体的なタスク名", "owner": "もっちゃん | クライアント | 両者", "deadline": "任意" }
+  ],
+  "homeworkForClient": ["宿題1（目的・成功の定義・想定される障壁を含む）", "宿題2", "..."],
+  "keyQuotes": [
+    { "speaker": "A | B", "text": "発言内容（できるだけ原文に近く）", "context": "この発言がセッションの何を示す分水嶺だったか" }
+  ],
+  "overallAssessment": "セッションの成果・コーチング効果・残課題・今後の設計への示唆を含む所感（deep では5文以上）。",
+  "sessionMoments": [
+    {
+      "type": "breakthrough | resistance | insight | decision | emotion",
+      "description": "何が起きたか（具体的な発言・場面を含む）",
+      "significance": "なぜそれがセッションにとって重要な転換点だったか"
+    }
+  ],
+  "coachingInsights": "コーチングアプローチの効果分析。どの介入が機能したか・しなかったか・次回以降の関わり方への示唆（deep では必須・詳細記述）。",
+  "underlyingThemes": ["クライアントがまだ言語化できていない深層テーマ1", "深層テーマ2", "..."],
+  "clientStateShift": "セッション開始時の状態 → 途中の変化 → 終了時の状態を具体的に描写。エネルギー・確信度・意欲がどう変化したか（deep では必須・詳細記述）。",
+  "nextSessionSuggestions": ["次回扱うべきテーマ1（なぜ今それを扱うべきかの根拠付き）", "テーマ2", "..."]
 }`;
 
 // ─── 共通ユーティリティ ───────────────────────────────────────────────────────
@@ -191,7 +353,7 @@ ${buildSpeakerContext(speakerNames)}
 ${transcriptText}
 
 【出力するJSONの型】
-${JSON_SCHEMA}`;
+${JSON_SCHEMA_BASIC}`;
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
@@ -221,16 +383,21 @@ export async function generateCustomSummary(
   // deep モードのみ Botarhythm Studio コンテキストを使用
   const systemPrompt = options.depth === 'deep' ? BOTARHYTHM_SYSTEM_PROMPT : GENERIC_SYSTEM_PROMPT;
 
+  // detailed/deep では拡張スキーマを使用
+  const jsonSchema = (options.depth === 'detailed' || options.depth === 'deep')
+    ? JSON_SCHEMA_EXTENDED
+    : JSON_SCHEMA_BASIC;
+
   const transcriptText = transcript
     .map((u) => `[${u.timestamp}] 話者${u.speaker}: ${u.text}`)
     .join('\n');
 
   const depthInstruction = DEPTH_INSTRUCTIONS[options.depth];
-  const patternInstructions = options.patterns.map((p) => PATTERN_INSTRUCTIONS[p]).join('\n');
+  const patternInstructions = options.patterns.map((p) => PATTERN_INSTRUCTIONS[p]).join('\n\n');
 
   const notesSection = [
-    options.clientNotes.trim() && `【クライアント共通メモ】\n${options.clientNotes.trim()}`,
-    options.userNotes.trim() && `【このセッションの補正メモ】\n${options.userNotes.trim()}`,
+    options.clientNotes.trim() && `【クライアント共通メモ（用語の誤変換修正・クライアント背景情報）】\n${options.clientNotes.trim()}`,
+    options.userNotes.trim() && `【このセッションの補正メモ（注力ポイント・文脈補足）】\n${options.userNotes.trim()}`,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -241,15 +408,15 @@ ${buildSpeakerContext(options.speakerNames)}
 
 ${depthInstruction}
 
-${patternInstructions ? `【重点パターン】\n${patternInstructions}` : ''}
+${patternInstructions ? `【重点分析パターン — 以下の観点を特に重視して分析すること】\n${patternInstructions}` : ''}
 
-${notesSection ? `${notesSection}\n（上記のメモを反映してサマリーを作成してください。用語の誤変換修正・文脈補足・注力ポイントなどを優先的に取り込むこと）` : ''}
+${notesSection ? `${notesSection}\n（上記のメモを分析に反映すること。特に用語の誤変換は正確な語句に修正した上でサマリーを作成してください）` : ''}
 
 【文字起こし】
 ${transcriptText}
 
 【出力するJSONの型】
-${JSON_SCHEMA}`;
+${jsonSchema}`;
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
@@ -286,7 +453,7 @@ ${termsText}
 - 人名 → 「クライアント」「担当者」「Aさん」など文脈に合う表現
 - 企業名・サービス名 → 「A社」「当該サービス」など
 - 文章が自然に読めるよう適切に言い換える
-- JSONのキー名・構造は変えない
+- JSONのキー名・構造は変えない（存在しないフィールドは追加しない）
 - clientName フィールドも匿名化する
 
 【元のサマリーJSON】

@@ -35,6 +35,12 @@ export interface SessionSummary {
   homeworkForClient: string[];
   keyQuotes: KeyQuote[];
   overallAssessment: string;
+  // ── Deep/Detailed モードで生成される拡張フィールド ──
+  sessionMoments?: SessionMoment[];       // セッション内の転換点
+  coachingInsights?: string;              // コーチングアプローチの効果分析
+  underlyingThemes?: string[];            // 表面課題の下にある深層テーマ
+  clientStateShift?: string;             // セッション前後でのクライアントの心理的変化
+  nextSessionSuggestions?: string[];     // 次回セッションへの提案アジェンダ
 }
 
 export interface NextAction {
@@ -47,6 +53,13 @@ export interface KeyQuote {
   speaker: 'A' | 'B';
   text: string;
   context: string;
+}
+
+// セッション内の転換点（詳細・Deep モードで使用）
+export interface SessionMoment {
+  type: 'breakthrough' | 'resistance' | 'insight' | 'decision' | 'emotion';
+  description: string;  // 何が起きたか
+  significance: string; // なぜそれが重要か
 }
 
 // 話者名のマッピング
