@@ -11,8 +11,9 @@ import type {
 } from '@/lib/types';
 import { DEPTH_LABELS, PATTERN_LABELS } from '@/lib/types';
 import type { ShareRecord } from '@/lib/db';
+import { CrossAnalysisView } from './CrossAnalysisView';
 
-type ActivePanel = 'regenerate' | 'share' | 'history' | null;
+type ActivePanel = 'regenerate' | 'share' | 'history' | 'crossanalysis' | null;
 
 const DEPTHS: SummaryDepth[] = ['simple', 'standard', 'detailed', 'deep'];
 const PATTERNS: SummaryPattern[] = ['action', 'psychology', 'coaching', 'strategy', 'problem'];
@@ -276,6 +277,21 @@ export function SessionActionBar({
               {shares.length}
             </span>
           )}
+        </button>
+
+        {/* クロス分析 */}
+        <button
+          onClick={() => toggle('crossanalysis')}
+          className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors active:scale-95 ${
+            activePanel === 'crossanalysis'
+              ? 'border-violet-400 bg-violet-50 text-violet-700 dark:border-violet-600 dark:bg-violet-900/20 dark:text-violet-300'
+              : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+          }`}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+          クロス分析
         </button>
       </div>
 
@@ -547,6 +563,21 @@ export function SessionActionBar({
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {/* ══ クロス分析パネル ══ */}
+          {activePanel === 'crossanalysis' && (
+            <div className="p-5">
+              <div className="mb-5 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">クロスセッション分析</h3>
+                <button onClick={() => setActivePanel(null)} className="rounded p-1 text-slate-400 hover:bg-slate-100 active:bg-slate-200 dark:hover:bg-slate-700">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <CrossAnalysisView clientName={clientName} />
             </div>
           )}
 

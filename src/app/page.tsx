@@ -7,6 +7,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { RailwayStatus } from '@/components/RailwayStatus';
 import { ClientTabs } from '@/components/ClientTabs';
 import { ClientSettingsPanel } from '@/components/ClientSettingsPanel';
+import { CrossAnalysisView } from '@/components/CrossAnalysisView';
 import type { Session } from '@/lib/types';
 
 const REFRESH_INTERVAL = Number(process.env.NEXT_PUBLIC_POLL_INTERVAL_MS) || 10000;
@@ -17,6 +18,7 @@ export default function HomePage() {
   const [activeClient, setActiveClient] = useState<string | null>(null);
   const [managingClient, setManagingClient] = useState<string | null>(null);
   const [adminMode, setAdminMode] = useState(false);
+  const [showCrossAnalysis, setShowCrossAnalysis] = useState(false);
 
   const fetchSessions = useCallback(async () => {
     try {
@@ -67,6 +69,12 @@ export default function HomePage() {
     if (client) setActiveClient(client);
   };
 
+  // クライアント切り替え時にクロス分析を閉じる
+  const handleClientSelect = (client: string | null) => {
+    setActiveClient(client);
+    setShowCrossAnalysis(false);
+  };
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
       {/* ヘッダー */}
@@ -109,17 +117,43 @@ export default function HomePage() {
       <ClientTabs
         sessions={sessions}
         activeClient={activeClient}
-        onSelect={setActiveClient}
+        onSelect={handleClientSelect}
         managingClient={adminMode ? managingClient : null}
         onManage={adminMode ? handleManage : () => {}}
       />
 
-      {/* クライアント設定パネル */}
+      {/* クライアント選択中 — クロス分析ボタン */}
+      {activeClient && !adminMode && (
+        <div className="mb-3 flex items-center justify-end">
+          <button
+            onClick={() => setShowCrossAnalysis((v) => !v)}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors active:scale-95 ${
+              showCrossAnalysis
+                ? 'border-violet-400 bg-violet-50 text-violet-700 dark:border-violet-600 dark:bg-violet-900/20 dark:text-violet-300'
+                : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'
+            }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            クロス分析
+          </button>
+        </div>
+      )}
+
+      {/* クライアント設定パネル（管理モード） */}
       {adminMode && managingClient && (
         <ClientSettingsPanel
           clientName={managingClient}
           onClose={() => setManagingClient(null)}
         />
+      )}
+
+      {/* クロス分析パネル（通常モード） */}
+      {activeClient && !adminMode && showCrossAnalysis && (
+        <div className="mb-4 rounded-xl border border-violet-200 bg-white p-5 shadow-sm dark:border-violet-900/40 dark:bg-slate-900">
+          <CrossAnalysisView clientName={activeClient} onClose={() => setShowCrossAnalysis(false)} />
+        </div>
       )}
 
       {/* セッション一覧 */}

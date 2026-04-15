@@ -200,6 +200,18 @@ export async function getAllSessions(): Promise<Session[]> {
   return (res.rows as SessionRow[]).map(rowToSession);
 }
 
+/** クライアント名でフィルタし、完了済みセッションを日付昇順で返す（クロス分析用） */
+export async function getSessionsByClient(clientName: string): Promise<Session[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT * FROM sessions
+     WHERE client_name = $1 AND status = 'done' AND summary_json IS NOT NULL
+     ORDER BY session_date ASC, created_at ASC`,
+    [clientName]
+  );
+  return (res.rows as SessionRow[]).map(rowToSession);
+}
+
 export async function updateStatus(
   id: string,
   status: SessionStatus,

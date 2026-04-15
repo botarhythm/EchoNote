@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { Utterance, SessionSummary, SummaryOptions, SummaryDepth, SummaryPattern, SpeakerNames } from './types';
+import type { Utterance, SessionSummary, SummaryOptions, SummaryDepth, SummaryPattern, SpeakerNames, CrossAnalysisResult } from './types';
 
 // ─── JSONパースユーティリティ ─────────────────────────────────────────────────
 
@@ -431,6 +431,143 @@ ${jsonSchema}`;
     .join('');
 
   return parseJsonResponse<SessionSummary>(text);
+}
+
+// ─── クロスセッション縦断分析 ──────────────────────────────────────────────────
+
+const CROSS_ANALYSIS_SYSTEM_PROMPT = `あなたはBotarhythm Studioの専属ケースアナリストです。
+複数のコーチングセッションの記録を縦断的に読み解き、クライアントの成長と変化の全体像を明らかにします。
+
+【分析の視点】
+1. 時系列でセッションを読む
+   - 初回から最新回へと、何がどう変化してきたかを追う
+   - 「同じ悩みを繰り返している」のか「螺旋状に深まっている」のかを区別する
+   - 変化が起きたセッションを特定し、何がそのきっかけだったかを考察する
+
+2. パターンを抽出する
+   - 言葉・テーマ・懸念が繰り返される場合、それは解決されていない核心課題のシグナル
+   - クライアントが「宿題を実行している/していない」傾向は行動変容の度合いを示す
+   - アドバイスへの反応パターン（即実行型/検討型/抵抗型）を読む
+
+3. コーチングの成果を評価する
+   - どのフェーズ（認識→葛藤→行動→内省）にいるかを判断する
+   - もっちゃんとの関係性がどう深まってきたかを記述する
+   - 次のフェーズへ進む準備ができているかを評価する
+
+4. 実用的な前進のためのインサイトを生成する
+   - 「次のセッションで何を扱うべきか」を証拠に基づいて提言する
+   - まだ手をつけていない「本質的な問い」を浮き彫りにする
+   - クライアントが自走できる方向への示唆を含める
+
+JSONのみ返すこと。説明文・マークダウン・コードブロックは不要。`;
+
+interface SessionDigest {
+  date: string;
+  sessionType: string;
+  title: string;
+  clientPains: string[];
+  adviceGiven: string[];
+  nextActions: string[];
+  homeworkForClient: string[];
+  overallAssessment: string;
+  underlyingThemes?: string[];
+  clientStateShift?: string;
+  sessionMomentsCount?: number;
+}
+
+function buildSessionDigest(summary: SessionSummary): SessionDigest {
+  return {
+    date: summary.date,
+    sessionType: summary.sessionType,
+    title: summary.title,
+    clientPains: summary.clientPains,
+    adviceGiven: summary.adviceGiven,
+    nextActions: summary.nextActions.map((a) => `[${a.owner}] ${a.task}${a.deadline ? ` (${a.deadline})` : ''}`),
+    homeworkForClient: summary.homeworkForClient,
+    overallAssessment: summary.overallAssessment,
+    ...(summary.underlyingThemes?.length && { underlyingThemes: summary.underlyingThemes }),
+    ...(summary.clientStateShift && { clientStateShift: summary.clientStateShift }),
+    ...(summary.sessionMoments?.length && { sessionMomentsCount: summary.sessionMoments.length }),
+  };
+}
+
+export async function generateCrossAnalysis(
+  clientName: string,
+  sessions: Array<{ id: string; date: string; summary: SessionSummary }>
+): Promise<CrossAnalysisResult> {
+  const client = getClient();
+
+  const sessionDigests = sessions.map((s, i) => ({
+    index: i + 1,
+    ...buildSessionDigest(s.summary),
+  }));
+
+  const dateFrom = sessions[0].date;
+  const dateTo = sessions[sessions.length - 1].date;
+
+  const userPrompt = `【分析対象】
+クライアント: ${clientName}
+セッション数: ${sessions.length}回
+期間: ${dateFrom} 〜 ${dateTo}
+
+【セッション記録（時系列順）】
+${sessionDigests.map((s) => `
+── 第${s.index}回 (${s.date}) ──
+タイトル: ${s.title}
+種別: ${s.sessionType}
+課題: ${s.clientPains.join(' / ')}
+アドバイス: ${s.adviceGiven.join(' / ')}
+アクション: ${s.nextActions.join(' / ')}
+宿題: ${s.homeworkForClient.join(' / ')}
+所感: ${s.overallAssessment}${s.underlyingThemes ? `\n深層テーマ: ${s.underlyingThemes.join(' / ')}` : ''}${s.clientStateShift ? `\n変化: ${s.clientStateShift}` : ''}`).join('\n')}
+
+【出力するJSONの型】
+{
+  "clientName": "${clientName}",
+  "sessionCount": ${sessions.length},
+  "periodSummary": "例: 2024年3月〜2025年4月（${sessions.length}セッション）",
+  "generatedAt": "ISO8601形式の現在日時",
+  "progressNarrative": "クライアントの変遷を語る2〜3段落。具体的なセッションの流れを踏まえて記述。",
+  "recurringThemes": [
+    {
+      "theme": "テーマ名",
+      "sessionCount": "何回登場したか（数値）",
+      "evolution": "どのように変化・深化してきたか",
+      "status": "ongoing | resolved | deepening | new"
+    }
+  ],
+  "resolvedIssues": ["解消・前進した課題1", "..."],
+  "persistentChallenges": ["まだ残る・深まる課題1（なぜ解消されないかも含む）", "..."],
+  "emergingIssues": ["最近新たに浮上してきた課題1", "..."],
+  "behavioralPatterns": ["観察されたクライアントの行動パターン1（具体的な根拠を含む）", "..."],
+  "mindsetEvolution": "思考・姿勢・自己認識がどのように変化してきたかを2段落程度で。",
+  "actionPattern": "宿題やアクションアイテムの実行傾向の分析。具体的な事例を挙げながら記述。",
+  "keyMilestones": [
+    {
+      "sessionDate": "YYYY-MM-DD",
+      "description": "何が起きたか",
+      "significance": "なぜそれが重要な転換点だったか"
+    }
+  ],
+  "coachingRelationship": "もっちゃんとクライアントの関係性の深さ・質・変化を評価。信頼関係の構築度合いも含む。",
+  "currentPhase": "現在のコーチングフェーズの評価（認識段階 / 葛藤段階 / 行動段階 / 内省・統合段階 など）とその根拠。",
+  "nextPhaseRecommendation": "次のフェーズへ進むための提言。クライアントの準備状況・阻害要因・促進要因も含む2〜3段落。",
+  "priorityTopics": ["次回セッションで最優先に扱うべきテーマ1（根拠付き）", "テーマ2", "テーマ3"]
+}`;
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 8192,
+    system: CROSS_ANALYSIS_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: userPrompt }],
+  });
+
+  const text = response.content
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('');
+
+  return parseJsonResponse<CrossAnalysisResult>(text);
 }
 
 // ─── 匿名化サマリー生成 ───────────────────────────────────────────────────────

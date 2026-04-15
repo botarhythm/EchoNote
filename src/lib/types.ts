@@ -106,6 +106,58 @@ export const PATTERN_LABELS: Record<SummaryPattern, string> = {
   problem:    '課題分析',
 };
 
+// ─── クロスセッション分析 ────────────────────────────────────────────────────
+
+/** 複数セッション横断分析の結果 */
+export interface CrossAnalysisResult {
+  clientName: string;
+  sessionCount: number;
+  periodSummary: string;       // "2024年1月〜2025年4月（6セッション）"
+  generatedAt: string;
+
+  // 成長の物語
+  progressNarrative: string;   // クライアントの変遷を語る段落
+
+  // テーマの推移
+  recurringThemes: CrossTheme[];
+
+  // 課題の変化
+  resolvedIssues: string[];        // 解消・前進した課題
+  persistentChallenges: string[];  // まだ残る・深まっている課題
+  emergingIssues: string[];        // 最近新たに浮上した課題
+
+  // 行動・思考パターン
+  behavioralPatterns: string[];    // クライアントの行動上のパターン
+  mindsetEvolution: string;        // 思考・姿勢の変化（段落）
+
+  // 実行の傾向
+  actionPattern: string;           // 宿題・アクションの実行傾向
+
+  // マイルストーン
+  keyMilestones: CrossMilestone[];
+
+  // コーチング関係の評価
+  coachingRelationship: string;    // 関係性の深さ・質の評価
+  currentPhase: string;            // 現在のコーチングフェーズ
+
+  // 次のフェーズへ
+  nextPhaseRecommendation: string; // 次フェーズへの提言（段落）
+  priorityTopics: string[];        // 次回セッションの優先テーマ
+}
+
+export interface CrossTheme {
+  theme: string;
+  sessionCount: number;         // 何セッションに登場したか
+  evolution: string;            // どう変化してきたか
+  status: 'ongoing' | 'resolved' | 'deepening' | 'new';
+}
+
+export interface CrossMilestone {
+  sessionDate: string;
+  description: string;
+  significance: string;
+}
+
 // セッション全体のデータモデル
 export interface Session {
   id: string;             // driveFileId をそのまま使う
