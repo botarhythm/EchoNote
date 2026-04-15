@@ -233,7 +233,6 @@ export async function createShare(
   const token = randomBytes(16).toString('hex');
 
   if (privacy) {
-    // プライバシー保護モード：常に新規トークンを発行
     await p.query(
       `INSERT INTO shares (token, session_id, masked_terms, anonymized_summary_json, anonymized_transcript_json)
        VALUES ($1, $2, $3, $4, $5)`,
@@ -246,13 +245,6 @@ export async function createShare(
       ]
     );
   } else {
-    // 通常モード：既存トークンを再利用
-    const existing = await p.query(
-      'SELECT token FROM shares WHERE session_id = $1 AND masked_terms IS NULL',
-      [sessionId]
-    );
-    if (existing.rows.length > 0) return existing.rows[0].token as string;
-
     await p.query('INSERT INTO shares (token, session_id) VALUES ($1, $2)', [token, sessionId]);
   }
 
