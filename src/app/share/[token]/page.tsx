@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import type { Session } from '@/lib/types';
 import { SummaryView } from '@/components/SummaryView';
-import { MindMap } from '@/components/MindMap';
+import { SummaryVisualizations } from '@/components/SummaryVisualizations';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 export default function SharePage() {
@@ -69,7 +69,7 @@ export default function SharePage() {
       {session.summary ? (
         <div className="space-y-8">
           <SummaryView summary={session.summary} />
-          <MindMap summary={session.summary} />
+          <SummaryVisualizations summary={session.summary} />
         </div>
       ) : (
         <p className="text-slate-500 dark:text-slate-400">データがありません</p>

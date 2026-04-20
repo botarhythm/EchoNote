@@ -8,7 +8,7 @@ import { getSummaryMode } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { SummaryView } from '@/components/SummaryView';
 import { TranscriptView } from '@/components/TranscriptView';
-import { MindMap } from '@/components/MindMap';
+import { SummaryVisualizations } from '@/components/SummaryVisualizations';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { SessionActionBar } from '@/components/SessionActionBar';
 
@@ -289,7 +289,11 @@ export default function SessionDetailPage() {
       {activeTab === 'summary' && session.summary ? (
         <div className="space-y-6">
           <SummaryView summary={session.summary} speakerNames={speakerNames} />
-          <MindMap summary={session.summary} />
+          <SummaryVisualizations
+            summary={session.summary}
+            speakerALabel={speakerNames?.A}
+            speakerBLabel={speakerNames?.B}
+          />
         </div>
       ) : activeTab === 'summary' ? (
         <p className="text-slate-500 dark:text-slate-400">サマリーはまだ生成されていません</p>
