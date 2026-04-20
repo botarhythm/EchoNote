@@ -2,36 +2,48 @@
 
 import { useState, useEffect } from 'react';
 import type {
+  SummaryMode,
   SummaryDepth,
-  SummaryPattern,
+  NormalDepth,
+  BotarhythmDepth,
+  NormalPattern,
+  BotarhythmPattern,
   SummaryOptions,
   SessionSummary,
   ClientSettings,
-  SpeakerNames,
 } from '@/lib/types';
-import { DEPTH_LABELS, PATTERN_LABELS } from '@/lib/types';
+import {
+  DEPTH_LABELS,
+  PATTERN_LABELS,
+  DEPTHS_BY_MODE,
+  PATTERNS_BY_MODE,
+} from '@/lib/types';
 
 interface SummaryCustomizerProps {
   sessionId: string;
   clientName: string;
+  currentMode?: SummaryMode;
   onRegenerated: (summary: SessionSummary) => void;
 }
 
-const DEPTHS_GENERAL: SummaryDepth[] = ['simple', 'standard', 'detailed'];
-const DEPTHS_BOTARHYTHM: SummaryDepth[] = ['simple', 'standard', 'detailed', 'deep'];
-const PATTERNS: SummaryPattern[] = ['action', 'psychology', 'coaching', 'strategy', 'problem'];
-
-export function SummaryCustomizer({ sessionId, clientName, onRegenerated }: SummaryCustomizerProps) {
+export function SummaryCustomizer({
+  sessionId,
+  clientName,
+  currentMode,
+  onRegenerated,
+}: SummaryCustomizerProps) {
   const [open, setOpen] = useState(false);
+
+  // モード（最上位の切り替え）
+  const [mode, setMode] = useState<SummaryMode>(currentMode ?? 'normal');
 
   // 話者設定
   const [speakerA, setSpeakerA] = useState('もっちゃん');
   const [speakerB, setSpeakerB] = useState('');
 
-  // 再生成オプション
-  const [botarythmMode, setBotarythmMode] = useState(false);
+  // 再生成オプション（モード切替時に自動整合）
   const [depth, setDepth] = useState<SummaryDepth>('standard');
-  const [patterns, setPatterns] = useState<SummaryPattern[]>([]);
+  const [patterns, setPatterns] = useState<Array<NormalPattern | BotarhythmPattern>>([]);
   const [clientNotes, setClientNotes] = useState('');
   const [userNotes, setUserNotes] = useState('');
 
@@ -41,6 +53,18 @@ export function SummaryCustomizer({ sessionId, clientName, onRegenerated }: Summ
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+
+  // モード切替時: 深度とパターンを新モードで有効な値にリセット
+  useEffect(() => {
+    const allowedDepths = DEPTHS_BY_MODE[mode] as SummaryDepth[];
+    if (!allowedDepths.includes(depth)) {
+      setDepth(mode === 'botarhythm' ? 'detailed' : 'standard');
+    }
+    const allowedPatterns = PATTERNS_BY_MODE[mode] as string[];
+    setPatterns((prev) => prev.filter((p) => allowedPatterns.includes(p)));
+    // depth は自動リセットのみ、副次effectはなし
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   // パネルを開いたときにクライアント設定を読み込む
   useEffect(() => {
@@ -76,15 +100,32 @@ export function SummaryCustomizer({ sessionId, clientName, onRegenerated }: Summ
     }
   };
 
-  const togglePattern = (p: SummaryPattern) => {
+  const togglePattern = (p: NormalPattern | BotarhythmPattern) => {
     setPatterns((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
   };
 
   const handleRegenerate = async () => {
     setRegenerating(true);
     setError(null);
-    const speakerNames: SpeakerNames = { A: speakerA, B: speakerB };
-    const options: SummaryOptions = { depth, patterns, userNotes, clientNotes, speakerNames, botarythmMode };
+    const options: SummaryOptions =
+      mode === 'botarhythm'
+        ? {
+            mode: 'botarhythm',
+            depth: depth as BotarhythmDepth,
+            patterns: patterns as BotarhythmPattern[],
+            userNotes,
+            clientNotes,
+            speakerNames: { A: speakerA, B: speakerB },
+          }
+        : {
+            mode: 'normal',
+            depth: depth as NormalDepth,
+            patterns: patterns as NormalPattern[],
+            userNotes,
+            clientNotes,
+            speakerNames: { A: speakerA, B: speakerB },
+          };
+
     try {
       const res = await fetch(`/api/sessions/${sessionId}/regenerate-summary`, {
         method: 'POST',
@@ -104,6 +145,10 @@ export function SummaryCustomizer({ sessionId, clientName, onRegenerated }: Summ
       setRegenerating(false);
     }
   };
+
+  const isBotarhythm = mode === 'botarhythm';
+  const availableDepths = DEPTHS_BY_MODE[mode] as SummaryDepth[];
+  const availablePatterns = PATTERNS_BY_MODE[mode] as Array<NormalPattern | BotarhythmPattern>;
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800/50">
@@ -127,74 +172,81 @@ export function SummaryCustomizer({ sessionId, clientName, onRegenerated }: Summ
           ) : (
             <div className="space-y-6 px-4 py-5">
 
-              {/* ── Botarhythm モード トグル ── */}
-              <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-3 dark:border-amber-800/40 dark:bg-amber-900/10">
-                <div>
-                  <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
-                    Botarhythm セッションとして分析
-                  </p>
-                  <p className="mt-0.5 text-xs text-amber-600 dark:text-amber-400">
-                    コーチング・心理・ビジネス戦略の3視点で深掘り。ディープダイブ深度が解放されます。
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    const next = !botarythmMode;
-                    setBotarythmMode(next);
-                    // deep深度はBotarhythmモード専用のためリセット
-                    if (!next && depth === 'deep') setDepth('standard');
-                  }}
-                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-                    botarythmMode ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'
-                  }`}
-                  role="switch"
-                  aria-checked={botarythmMode}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                      botarythmMode ? 'translate-x-6' : 'translate-x-1'
+              {/* ── モード選択（セグメントコントロール） ── */}
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  サマリーモード
+                </p>
+                <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-900/40">
+                  <button
+                    onClick={() => setMode('normal')}
+                    className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                      !isBotarhythm
+                        ? 'bg-white text-slate-900 shadow dark:bg-slate-700 dark:text-slate-100'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                     }`}
-                  />
-                </button>
+                  >
+                    <span className="block">ノーマル</span>
+                    <span className="block text-[11px] font-normal opacity-70">汎用議事録</span>
+                  </button>
+                  <button
+                    onClick={() => setMode('botarhythm')}
+                    className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                      isBotarhythm
+                        ? 'bg-amber-500 text-white shadow'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    <span className="block">Botarhythm</span>
+                    <span className="block text-[11px] font-normal opacity-80">コーチング深層分析</span>
+                  </button>
+                </div>
+                <p className="mt-1.5 text-xs text-slate-400">
+                  {isBotarhythm
+                    ? 'コーチング・心理・ビジネス戦略の3視点で深掘り。転換点や深層テーマを抽出'
+                    : '一般的な会議・打合せ向け。議事録として必要十分な情報を整理'}
+                </p>
               </div>
 
-              {/* ── 話者設定 ── */}
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    話者設定
-                  </p>
-                  {clientName && clientName !== '不明' && (
-                    <span className="text-xs text-slate-400">{clientName} の設定として保存されます</span>
-                  )}
+              {/* ── 話者設定（Botarhythmモードのみ表示） ── */}
+              {isBotarhythm && (
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      話者設定
+                    </p>
+                    {clientName && clientName !== '不明' && (
+                      <span className="text-xs text-slate-400">{clientName} の設定として保存されます</span>
+                    )}
+                  </div>
+                  <div className="flex gap-3">
+                    <label className="flex flex-1 flex-col gap-1">
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        話者 A（アドバイザー側）
+                      </span>
+                      <input
+                        type="text"
+                        value={speakerA}
+                        onChange={(e) => setSpeakerA(e.target.value)}
+                        placeholder="もっちゃん"
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                      />
+                    </label>
+                    <label className="flex flex-1 flex-col gap-1">
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        話者 B（クライアント側）
+                      </span>
+                      <input
+                        type="text"
+                        value={speakerB}
+                        onChange={(e) => setSpeakerB(e.target.value)}
+                        placeholder="クライアント名"
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+                      />
+                    </label>
+                  </div>
                 </div>
-                <div className="flex gap-3">
-                  <label className="flex flex-1 flex-col gap-1">
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                      話者 A（アドバイザー側）
-                    </span>
-                    <input
-                      type="text"
-                      value={speakerA}
-                      onChange={(e) => setSpeakerA(e.target.value)}
-                      placeholder="もっちゃん"
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
-                    />
-                  </label>
-                  <label className="flex flex-1 flex-col gap-1">
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                      話者 B（クライアント側）
-                    </span>
-                    <input
-                      type="text"
-                      value={speakerB}
-                      onChange={(e) => setSpeakerB(e.target.value)}
-                      placeholder="クライアント名"
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
-                    />
-                  </label>
-                </div>
-              </div>
+              )}
 
               {/* ── クライアント共通メモ ── */}
               <div>
@@ -207,7 +259,7 @@ export function SummaryCustomizer({ sessionId, clientName, onRegenerated }: Summ
                     disabled={savingSettings || !clientName || clientName === '不明'}
                     className="rounded px-2 py-0.5 text-xs text-blue-600 hover:bg-blue-50 disabled:opacity-40 dark:text-blue-400 dark:hover:bg-blue-950/30"
                   >
-                    {savingSettings ? '保存中...' : savedMessage ?? '話者設定と共に保存'}
+                    {savingSettings ? '保存中...' : savedMessage ?? (isBotarhythm ? '話者設定と共に保存' : '保存')}
                   </button>
                 </div>
                 <textarea
@@ -220,13 +272,13 @@ export function SummaryCustomizer({ sessionId, clientName, onRegenerated }: Summ
                 <p className="mt-1 text-xs text-slate-400">このクライアントのすべてのセッションで参照されます</p>
               </div>
 
-              {/* ── 深度セレクター ── */}
+              {/* ── 深度セレクター（モード別に選択肢が変わる） ── */}
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   深度
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {(botarythmMode ? DEPTHS_BOTARHYTHM : DEPTHS_GENERAL).map((d) => (
+                  {availableDepths.map((d) => (
                     <button
                       key={d}
                       onClick={() => setDepth(d)}
@@ -255,7 +307,7 @@ export function SummaryCustomizer({ sessionId, clientName, onRegenerated }: Summ
                   重点パターン（複数選択可）
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {PATTERNS.map((p) => (
+                  {availablePatterns.map((p) => (
                     <button
                       key={p}
                       onClick={() => togglePattern(p)}
@@ -274,16 +326,16 @@ export function SummaryCustomizer({ sessionId, clientName, onRegenerated }: Summ
               {/* ── このセッションのメモ ── */}
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  このセッションの補正メモ
+                  {isBotarhythm ? 'このセッションの補正メモ' : 'この会議の補正メモ'}
                 </p>
                 <textarea
                   value={userNotes}
                   onChange={(e) => setUserNotes(e.target.value)}
                   rows={3}
-                  placeholder="例: 今回は新規事業の話がメイン&#10;例: セッション後半の提案内容を中心にまとめて"
+                  placeholder="例: 今回は新規事業の話がメイン&#10;例: 後半の提案内容を中心にまとめて"
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:placeholder-slate-500"
                 />
-                <p className="mt-1 text-xs text-slate-400">このセッションの1回の再生成にのみ使用されます</p>
+                <p className="mt-1 text-xs text-slate-400">この1回の再生成にのみ使用されます</p>
               </div>
 
               {/* エラー */}

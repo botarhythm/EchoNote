@@ -23,8 +23,12 @@ export interface Utterance {
   text: string;
 }
 
+// サマリーのモード（ノーマル議事録 vs Botarhythmセッション分析）
+export type SummaryMode = 'normal' | 'botarhythm';
+
 // Claude APIが返すサマリーのJSON構造
 export interface SessionSummary {
+  mode?: SummaryMode;                    // 'normal'|'botarhythm'（未設定 = 後方互換で推測）
   title: string;
   clientName: string;
   date: string;
@@ -35,12 +39,24 @@ export interface SessionSummary {
   homeworkForClient: string[];
   keyQuotes: KeyQuote[];
   overallAssessment: string;
-  // ── Deep/Detailed モードで生成される拡張フィールド ──
+  // ── Botarhythm モードでのみ生成される深層分析フィールド ──
   sessionMoments?: SessionMoment[];       // セッション内の転換点
   coachingInsights?: string;              // コーチングアプローチの効果分析
   underlyingThemes?: string[];            // 表面課題の下にある深層テーマ
   clientStateShift?: string;             // セッション前後でのクライアントの心理的変化
   nextSessionSuggestions?: string[];     // 次回セッションへの提案アジェンダ
+}
+
+/** mode 未設定の過去データも扱えるよう、フィールドの有無から推測する */
+export function getSummaryMode(summary: SessionSummary): SummaryMode {
+  if (summary.mode) return summary.mode;
+  const hasDeepFields =
+    (summary.sessionMoments?.length ?? 0) > 0 ||
+    !!summary.coachingInsights ||
+    (summary.underlyingThemes?.length ?? 0) > 0 ||
+    !!summary.clientStateShift ||
+    (summary.nextSessionSuggestions?.length ?? 0) > 0;
+  return hasDeepFields ? 'botarhythm' : 'normal';
 }
 
 export interface NextAction {
@@ -77,20 +93,50 @@ export interface ClientSettings {
   updatedAt?: string;
 }
 
-// サマリーの深度
-export type SummaryDepth = 'simple' | 'standard' | 'detailed' | 'deep';
+// ─── モード別の深度とパターン ─────────────────────────────────────────────────
 
-// サマリーの観点（複数選択可）
-export type SummaryPattern = 'action' | 'psychology' | 'coaching' | 'strategy' | 'problem';
+// ノーマル議事録の深度（一般的な会議・打合せ向け）
+export type NormalDepth = 'simple' | 'standard' | 'detailed';
+// Botarhythm セッション分析の深度（deep がフラグシップ）
+export type BotarhythmDepth = 'standard' | 'detailed' | 'deep';
+// 互換用のユニオン型
+export type SummaryDepth = NormalDepth | BotarhythmDepth;
 
-export interface SummaryOptions {
-  depth: SummaryDepth;
-  patterns: SummaryPattern[];
+// ノーマル議事録向けパターン（コーチング臭のない汎用観点）
+export type NormalPattern = 'action' | 'strategy' | 'problem';
+// Botarhythm セッション向けパターン
+export type BotarhythmPattern = 'psychology' | 'coaching' | 'strategy' | 'problem';
+// 互換用のユニオン型
+export type SummaryPattern = NormalPattern | BotarhythmPattern;
+
+// ─── サマリー生成オプション（mode による判別可能ユニオン） ────────────────────
+
+interface BaseSummaryOptions {
   userNotes: string;       // このセッション限りの補正メモ
   clientNotes: string;     // クライアント共通の補正メモ
   speakerNames: SpeakerNames;
-  botarythmMode?: boolean; // Botarhythm Studio 専用分析モード
 }
+
+export interface NormalSummaryOptions extends BaseSummaryOptions {
+  mode: 'normal';
+  depth: NormalDepth;
+  patterns: NormalPattern[];
+}
+
+export interface BotarhythmSummaryOptions extends BaseSummaryOptions {
+  mode: 'botarhythm';
+  depth: BotarhythmDepth;
+  patterns: BotarhythmPattern[];
+}
+
+export type SummaryOptions = NormalSummaryOptions | BotarhythmSummaryOptions;
+
+// ─── ラベル定義 ───────────────────────────────────────────────────────────────
+
+export const MODE_LABELS: Record<SummaryMode, string> = {
+  normal:     'ノーマル（議事録）',
+  botarhythm: 'Botarhythmセッション',
+};
 
 export const DEPTH_LABELS: Record<SummaryDepth, string> = {
   simple:   'シンプル',
@@ -105,6 +151,24 @@ export const PATTERN_LABELS: Record<SummaryPattern, string> = {
   coaching:   'コーチング観点',
   strategy:   'ビジネス戦略',
   problem:    '課題分析',
+};
+
+/** モードごとに利用可能な深度 */
+export const DEPTHS_BY_MODE: {
+  normal: NormalDepth[];
+  botarhythm: BotarhythmDepth[];
+} = {
+  normal:     ['simple', 'standard', 'detailed'],
+  botarhythm: ['standard', 'detailed', 'deep'],
+};
+
+/** モードごとに利用可能なパターン */
+export const PATTERNS_BY_MODE: {
+  normal: NormalPattern[];
+  botarhythm: BotarhythmPattern[];
+} = {
+  normal:     ['action', 'strategy', 'problem'],
+  botarhythm: ['psychology', 'coaching', 'strategy', 'problem'],
 };
 
 // ─── クロスセッション分析 ────────────────────────────────────────────────────

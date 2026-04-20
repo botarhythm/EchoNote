@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import type { Session, SessionSummary, SpeakerNames, ClientSettings } from '@/lib/types';
+import { getSummaryMode } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { SummaryView } from '@/components/SummaryView';
 import { TranscriptView } from '@/components/TranscriptView';
@@ -246,6 +247,7 @@ export default function SessionDetailPage() {
           clientName={session.meta.clientName}
           hasTranscript={!!(session.transcript && session.transcript.length > 0)}
           isDone={session.status === 'done'}
+          currentMode={session.summary ? getSummaryMode(session.summary) : undefined}
           onRegenerated={(newSummary: SessionSummary) =>
             setSession((prev) => (prev ? { ...prev, summary: newSummary } : prev))
           }

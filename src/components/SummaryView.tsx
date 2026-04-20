@@ -1,4 +1,5 @@
 import type { SessionSummary, SpeakerNames, SessionMoment } from '@/lib/types';
+import { getSummaryMode } from '@/lib/types';
 
 interface SummaryViewProps {
   summary: SessionSummary;
@@ -17,8 +18,20 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
   const speakerLabel = (s: 'A' | 'B') =>
     speakerNames?.[s] ? speakerNames[s] : `話者${s}`;
 
+  // ノーマル議事録モードではBotarhythm専用フィールドを非表示にする（仮にデータが残っていても）
+  const isBotarhythm = getSummaryMode(summary) === 'botarhythm';
+
   return (
     <div className="space-y-8">
+      {/* モードバッジ（Botarhythmのときのみ） */}
+      {isBotarhythm && (
+        <div className="-mb-4 flex">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            Botarhythm セッション分析
+          </span>
+        </div>
+      )}
 
       {/* 主要な課題・議題 */}
       {summary.clientPains.length > 0 && (
@@ -37,8 +50,8 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
         </section>
       )}
 
-      {/* 深層テーマ（detailed/deep モード） */}
-      {summary.underlyingThemes && summary.underlyingThemes.length > 0 && (
+      {/* 深層テーマ（Botarhythmモードのみ） */}
+      {isBotarhythm && summary.underlyingThemes && summary.underlyingThemes.length > 0 && (
         <section>
           <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             深層テーマ
@@ -56,8 +69,8 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
         </section>
       )}
 
-      {/* セッションの転換点（detailed/deep モード） */}
-      {summary.sessionMoments && summary.sessionMoments.length > 0 && (
+      {/* セッションの転換点（Botarhythmモードのみ） */}
+      {isBotarhythm && summary.sessionMoments && summary.sessionMoments.length > 0 && (
         <section>
           <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             セッションの転換点
@@ -90,8 +103,8 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
         </section>
       )}
 
-      {/* クライアントの変化（deep モード） */}
-      {summary.clientStateShift && (
+      {/* クライアントの変化（Botarhythmモードのみ） */}
+      {isBotarhythm && summary.clientStateShift && (
         <section>
           <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             セッション中の変化
@@ -189,8 +202,8 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
         </section>
       )}
 
-      {/* コーチング効果分析（coaching パターン / deep モード） */}
-      {summary.coachingInsights && (
+      {/* コーチング効果分析（Botarhythmモードのみ） */}
+      {isBotarhythm && summary.coachingInsights && (
         <section>
           <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             コーチング効果分析
@@ -209,8 +222,8 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
         <p className="leading-relaxed text-slate-700 dark:text-slate-200">{summary.overallAssessment}</p>
       </section>
 
-      {/* 次回への提案（detailed/deep モード） */}
-      {summary.nextSessionSuggestions && summary.nextSessionSuggestions.length > 0 && (
+      {/* 次回への提案（Botarhythmモードのみ） */}
+      {isBotarhythm && summary.nextSessionSuggestions && summary.nextSessionSuggestions.length > 0 && (
         <section>
           <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             次回への提案

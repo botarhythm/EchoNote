@@ -1,5 +1,15 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { Utterance, SessionSummary, SummaryOptions, SummaryDepth, SummaryPattern, SpeakerNames, CrossAnalysisResult } from './types';
+import type {
+  Utterance,
+  SessionSummary,
+  SummaryOptions,
+  NormalDepth,
+  BotarhythmDepth,
+  NormalPattern,
+  BotarhythmPattern,
+  SpeakerNames,
+  CrossAnalysisResult,
+} from './types';
 
 // ─── JSONパースユーティリティ ─────────────────────────────────────────────────
 
@@ -130,22 +140,58 @@ function buildSpeakerContext(speakerNames: SpeakerNames): string {
   return `\n【話者情報】\n${lines.join('\n')}\n（サマリー内では「話者A」「話者B」の代わりにこの名前を使用してください）`;
 }
 
-const DEPTH_INSTRUCTIONS: Record<SummaryDepth, string> = {
+// ─── ノーマル議事録モード: 深度指示 ──────────────────────────────────────────
+
+const NORMAL_DEPTH_INSTRUCTIONS: Record<NormalDepth, string> = {
   simple: `【深度: シンプル — 意思決定者のための2分ブリーフィング】
 
 目的：読み手が「今日の最重要事項」を2分で把握できること。
 
 出力の要件：
-- clientPains：最重要課題のみ2〜3項目。背景説明より「何が問題か」を優先
-- adviceGiven：最も重要な提案のみ2〜3項目。「何をすべきか」だけを端的に
+- clientPains：最重要の論点・課題のみ2〜3項目。背景説明より「何が問題か」を優先
+- adviceGiven：最も重要な決定事項・提案のみ2〜3項目。「何をすべきか」だけを端的に
 - nextActions：次のアクションを明確に（期限・担当があれば必ず記載）
-- homeworkForClient：クライアントがすぐやるべき1〜2項目
+- homeworkForClient：フォローアップ事項を1〜2項目
 - keyQuotes：省略可（特に印象的な発言が1つあれば可）
-- overallAssessment：1〜2文で「今日のセッションの一言要約」
-- sessionMoments / coachingInsights / underlyingThemes / clientStateShift / nextSessionSuggestions：空配列または省略
+- overallAssessment：1〜2文で「今日の会議の一言要約」
+- Botarhythm専用フィールド（sessionMoments / coachingInsights / underlyingThemes / clientStateShift / nextSessionSuggestions）は出力しない
 
-タイトルは「何のセッションだったか」がわかるシンプルな表現で。`,
+タイトルは「何の会議・打合せだったか」がわかるシンプルな表現で。`,
 
+  standard: `【深度: スタンダード — 全体像を把握する実用議事録】
+
+目的：会議・対話の全体像を整理し、関係者への共有や次回の準備に使えること。
+
+出力の要件：
+- clientPains：3〜5項目。「何が論点か」＋「その背景・文脈」をセットで記述
+- adviceGiven：3〜5項目。「何が決まったか／提案されたか」＋「なぜそう判断したか」を添える
+- nextActions：具体的なタスクとオーナーを明確に。期限は把握できる範囲で
+- homeworkForClient：3〜4項目。目的（なぜやるか）も1文で添える
+- keyQuotes：2〜3発言。contextで「この発言がなぜ印象的か」を説明
+- overallAssessment：2〜3文。会議の成果・残課題・次回への展望
+- Botarhythm専用フィールドは出力しない
+
+タイトルは「会議のテーマ」が伝わる表現で（例：「新機能リリース方針 — Q2ロードマップすり合わせ」）。`,
+
+  detailed: `【深度: 詳細 — 包括的な議事録】
+
+目的：会議の内容を詳細に記録し、欠席者や後日参照する関係者に耐える品質に。
+
+出力の要件：
+- clientPains：5〜8項目。「論点」「背景」「関係者の立場の違い」を層的に記述
+- adviceGiven：5〜8項目。決定・提案の根拠・前提条件・関係者の反応も含める
+- nextActions：すべてのアクションを漏れなく。期限・担当・背景まで記載
+- homeworkForClient：4〜6項目。実行手順・期待成果・想定される障壁も添える
+- keyQuotes：5〜7発言。contextは「この発言が何を示しているか」を詳しく
+- overallAssessment：3〜4文。会議の成果・残課題・未解決事項・次回への提言
+- Botarhythm専用フィールドは出力しない
+
+タイトルは会議の核心を示す表現で（例：「"優先順位の再定義"で合意 — 来期計画見直しMTG」）。`,
+};
+
+// ─── Botarhythmモード: 深度指示 ───────────────────────────────────────────────
+
+const BOTARHYTHM_DEPTH_INSTRUCTIONS: Record<BotarhythmDepth, string> = {
   standard: `【深度: スタンダード — 全体像を把握する実用サマリー】
 
 目的：セッションの全体像を整理し、次回に向けた準備に使えること。
@@ -208,14 +254,35 @@ const DEPTH_INSTRUCTIONS: Record<SummaryDepth, string> = {
 タイトルはセッションの深層テーマを象徴する、記憶に残る表現で（例：「"わかってるけどできない"の正体 — 自己効力感の再構築に向けた転換点」）。`,
 };
 
-const PATTERN_INSTRUCTIONS: Record<SummaryPattern, string> = {
+// ─── ノーマル議事録モード: パターン指示 ────────────────────────────────────────
+
+const NORMAL_PATTERN_INSTRUCTIONS: Record<NormalPattern, string> = {
   action: `【重点パターン: アクション重視】
-nextActionsとhomeworkForClientを最優先で充実させること。
-- nextActionsの各項目：「誰が・何を・いつまでに・どのように達成するか」まで具体化。期限は必ず記載（未定なら「次回セッションまで」など）
+nextActions と homeworkForClient を最優先で充実させること。
+- nextActionsの各項目：「誰が・何を・いつまでに・どのように達成するか」まで具体化。期限は必ず記載（未定なら「次回までに」など）
 - homeworkForClientの各項目：「やること」だけでなく「なぜやるか（目的）」「成功の定義」「想定される障壁と対処法」を含める
 - adviceGivenはすべて「行動可能な提案」に落とし込む。「〜を考える」ではなく「〜をする」形で
-- overallAssessmentは「今日決まったこと」と「次回までにやること」を中心に締める`,
+- overallAssessmentは「今日決まったこと」と「次までにやること」を中心に締める`,
 
+  strategy: `【重点パターン: ビジネス戦略】
+ビジネス課題の構造的分析を最優先とすること。
+- adviceGivenの各項目：「何をすべきか」＋「ビジネスインパクト（何が変わるか）」＋「優先度・緊急度の評価」を含める
+- nextActionsに期限・担当に加え「なぜ今これが最優先か」の根拠を添える
+- clientPainsを「表面症状」と「構造的問題」に区別して記述
+- overallAssessmentで「現在地」「目指す状態」「最大のボトルネック」を整理する`,
+
+  problem: `【重点パターン: 課題分析】
+問題の根本原因の特定を最優先とすること。
+- clientPainsを「表面症状 → 背景要因 → 根本原因」の3層で分析。優先度の高い順に並べる
+- 「解決すべき問題」と「受け入れるべき制約」を区別して記述
+- 問題間の因果関係・連鎖を意識する（AがBの原因でありCにも影響している、など）
+- adviceGivenは「対症療法」と「根本対処」を区別して提案する
+- overallAssessmentで「今日明確になった問い」と「まだ答えが出ていない問い」を整理する`,
+};
+
+// ─── Botarhythmモード: パターン指示 ────────────────────────────────────────────
+
+const BOTARHYTHM_PATTERN_INSTRUCTIONS: Record<BotarhythmPattern, string> = {
   psychology: `【重点パターン: クライアント心理】
 クライアントの内面状態の分析を最優先とすること。
 - clientPainsにはクライアントの感情状態・心理的ブロック・恐れ・自己イメージを含める。「何が怖いか」「何を避けているか」を明示
@@ -360,7 +427,7 @@ function getClient(): Anthropic {
 
 // ─── サマリー生成（初回自動） ──────────────────────────────────────────────────
 
-/** 初回自動サマリー: 汎用プロンプト（Botarhythm固有の前提なし） */
+/** 初回自動サマリー: ノーマル議事録モード固定（Botarhythm固有の前提を一切持たない） */
 export async function generateSummary(
   transcript: Utterance[],
   originalFilename: string
@@ -392,12 +459,13 @@ ${JSON_SCHEMA_BASIC}`;
     .map((block) => block.text)
     .join('');
 
-  return parseJsonResponse<SessionSummary>(text, response.stop_reason);
+  const parsed = parseJsonResponse<SessionSummary>(text, response.stop_reason);
+  return { ...parsed, mode: 'normal' };
 }
 
 // ─── サマリー再生成（カスタム） ────────────────────────────────────────────────
 
-/** カスタム再生成: 深度・パターン・補正メモ・話者名を反映 */
+/** カスタム再生成: モード・深度・パターン・補正メモ・話者名を反映 */
 export async function generateCustomSummary(
   transcript: Utterance[],
   originalFilename: string,
@@ -405,33 +473,36 @@ export async function generateCustomSummary(
 ): Promise<SessionSummary> {
   const client = getClient();
 
-  // Botarhythmモード または deep 深度のとき Botarhythm Studio コンテキストを使用
-  const systemPrompt = (options.botarythmMode || options.depth === 'deep')
-    ? BOTARHYTHM_SYSTEM_PROMPT
-    : GENERIC_SYSTEM_PROMPT;
+  // モードで system prompt・スキーマ・深度/パターン指示を完全に切り替える
+  const isBotarhythm = options.mode === 'botarhythm';
+  const systemPrompt = isBotarhythm ? BOTARHYTHM_SYSTEM_PROMPT : GENERIC_SYSTEM_PROMPT;
+  const jsonSchema = isBotarhythm ? JSON_SCHEMA_EXTENDED : JSON_SCHEMA_BASIC;
 
-  // detailed/deep では拡張スキーマを使用
-  const jsonSchema = (options.depth === 'detailed' || options.depth === 'deep')
-    ? JSON_SCHEMA_EXTENDED
-    : JSON_SCHEMA_BASIC;
+  const depthInstruction = isBotarhythm
+    ? BOTARHYTHM_DEPTH_INSTRUCTIONS[options.depth as BotarhythmDepth]
+    : NORMAL_DEPTH_INSTRUCTIONS[options.depth as NormalDepth];
+
+  const patternInstructions = isBotarhythm
+    ? (options.patterns as BotarhythmPattern[]).map((p) => BOTARHYTHM_PATTERN_INSTRUCTIONS[p]).join('\n\n')
+    : (options.patterns as NormalPattern[]).map((p) => NORMAL_PATTERN_INSTRUCTIONS[p]).join('\n\n');
 
   const transcriptText = transcript
     .map((u) => `[${u.timestamp}] 話者${u.speaker}: ${u.text}`)
     .join('\n');
 
-  const depthInstruction = DEPTH_INSTRUCTIONS[options.depth];
-  const patternInstructions = options.patterns.map((p) => PATTERN_INSTRUCTIONS[p]).join('\n\n');
-
   const notesSection = [
-    options.clientNotes.trim() && `【クライアント共通メモ（用語の誤変換修正・クライアント背景情報）】\n${options.clientNotes.trim()}`,
-    options.userNotes.trim() && `【このセッションの補正メモ（注力ポイント・文脈補足）】\n${options.userNotes.trim()}`,
+    options.clientNotes.trim() && `【クライアント共通メモ（用語の誤変換修正・背景情報）】\n${options.clientNotes.trim()}`,
+    options.userNotes.trim() && `【今回の補正メモ（注力ポイント・文脈補足）】\n${options.userNotes.trim()}`,
   ]
     .filter(Boolean)
     .join('\n\n');
 
+  // Botarhythmモードのみ話者情報（もっちゃん/クライアント名など）を活用
+  const speakerContext = isBotarhythm ? buildSpeakerContext(options.speakerNames) : '';
+
   const userPrompt = `【元のファイル名】
 ${originalFilename}
-${buildSpeakerContext(options.speakerNames)}
+${speakerContext}
 
 ${depthInstruction}
 
@@ -457,7 +528,8 @@ ${jsonSchema}`;
     .map((block) => block.text)
     .join('');
 
-  return parseJsonResponse<SessionSummary>(text, response.stop_reason);
+  const parsed = parseJsonResponse<SessionSummary>(text, response.stop_reason);
+  return { ...parsed, mode: options.mode };
 }
 
 // ─── クロスセッション縦断分析 ──────────────────────────────────────────────────

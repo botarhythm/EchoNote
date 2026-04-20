@@ -1,7 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, updateStatus } from '@/lib/db';
 import { generateCustomSummary } from '@/lib/claude';
-import type { SummaryOptions } from '@/lib/types';
+import type {
+  SummaryOptions,
+  SummaryMode,
+  NormalDepth,
+  NormalPattern,
+  BotarhythmDepth,
+  BotarhythmPattern,
+  SpeakerNames,
+} from '@/lib/types';
+import { DEPTHS_BY_MODE, PATTERNS_BY_MODE } from '@/lib/types';
+
+interface RegenerateRequestBody {
+  mode?: SummaryMode;
+  depth?: string;
+  patterns?: string[];
+  userNotes?: string;
+  clientNotes?: string;
+  speakerNames?: SpeakerNames;
+}
+
+function buildOptions(body: RegenerateRequestBody): SummaryOptions {
+  const base = {
+    userNotes: body.userNotes ?? '',
+    clientNotes: body.clientNotes ?? '',
+    speakerNames: body.speakerNames ?? { A: '', B: '' },
+  };
+
+  if (body.mode === 'botarhythm') {
+    const allowedDepths = DEPTHS_BY_MODE.botarhythm;
+    const allowedPatterns = PATTERNS_BY_MODE.botarhythm;
+    const depth = (allowedDepths as string[]).includes(body.depth ?? '')
+      ? (body.depth as BotarhythmDepth)
+      : 'detailed';
+    const patterns = (body.patterns ?? []).filter((p): p is BotarhythmPattern =>
+      (allowedPatterns as string[]).includes(p)
+    );
+    return { mode: 'botarhythm', depth, patterns, ...base };
+  }
+
+  const allowedDepths = DEPTHS_BY_MODE.normal;
+  const allowedPatterns = PATTERNS_BY_MODE.normal;
+  const depth = (allowedDepths as string[]).includes(body.depth ?? '')
+    ? (body.depth as NormalDepth)
+    : 'standard';
+  const patterns = (body.patterns ?? []).filter((p): p is NormalPattern =>
+    (allowedPatterns as string[]).includes(p)
+  );
+  return { mode: 'normal', depth, patterns, ...base };
+}
 
 export async function POST(
   req: NextRequest,
@@ -17,15 +65,8 @@ export async function POST(
     return NextResponse.json({ error: '書き起こしデータがありません' }, { status: 400 });
   }
 
-  const body = (await req.json()) as Partial<SummaryOptions>;
-  const options: SummaryOptions = {
-    depth: body.depth ?? 'standard',
-    patterns: body.patterns ?? [],
-    userNotes: body.userNotes ?? '',
-    clientNotes: body.clientNotes ?? '',
-    speakerNames: body.speakerNames ?? { A: '', B: '' },
-    botarythmMode: body.botarythmMode ?? false,
-  };
+  const body = (await req.json()) as RegenerateRequestBody;
+  const options = buildOptions(body);
 
   try {
     const summary = await generateCustomSummary(
