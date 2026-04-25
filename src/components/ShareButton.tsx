@@ -2,6 +2,10 @@
 
 import { useState, useRef, useEffect } from 'react';
 
+// カンマ（半角/全角）・読点・各種空白（半角/全角/NBSP/タブ/改行）を区切り文字とする
+const DELIMITER = /[,，、　 \s]+/u;
+const TRAILING_DELIMITER = /[,，、　 \s]$/u;
+
 export function ShareButton({ sessionId, onCreated }: { sessionId: string; onCreated?: () => void }) {
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
@@ -63,21 +67,8 @@ export function ShareButton({ sessionId, onCreated }: { sessionId: string; onCre
     }
   };
 
-  const addTerm = (term?: string) => {
-    const raw = term ?? termInput;
-    // カンマ（半角/全角）・読点・各種空白（半角/全角/NBSP/タブ/改行）で複数語を一度に追加できるようにする
-    // ブラウザ JS エンジンによる \s の挙動差を避けるため U+3000 と U+00A0 を明示
-    const tokens = raw
-      .split(/[,，、　 \s]+/u)
-      .map((t) => t.trim())
-      .filter((t) => t.length > 0);
-    if (tokens.length === 0) {
-      if (!term) {
-        setTermInput('');
-        inputRef.current?.focus();
-      }
-      return;
-    }
+  const commitTokens = (tokens: string[]) => {
+    if (tokens.length === 0) return;
     setMaskedTerms((prev) => {
       const next = [...prev];
       for (const t of tokens) {
@@ -86,10 +77,35 @@ export function ShareButton({ sessionId, onCreated }: { sessionId: string; onCre
       return next;
     });
     setSuggestedTerms((prev) => prev.filter((t) => !tokens.includes(t)));
+  };
+
+  const addTerm = (term?: string) => {
+    const raw = term ?? termInput;
+    const tokens = raw.split(DELIMITER).map((t) => t.trim()).filter((t) => t.length > 0);
+    commitTokens(tokens);
     if (!term) {
       setTermInput('');
       inputRef.current?.focus();
     }
+  };
+
+  // 入力中に区切り文字が現れたら、その時点で前のトークンを確定させる（タグ入力UI方式）
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (DELIMITER.test(value)) {
+      const tokens = value.split(DELIMITER).map((t) => t.trim()).filter((t) => t.length > 0);
+      const endsWithDelim = TRAILING_DELIMITER.test(value);
+      if (endsWithDelim) {
+        commitTokens(tokens);
+        setTermInput('');
+      } else {
+        const lastToken = tokens.pop() ?? '';
+        commitTokens(tokens);
+        setTermInput(lastToken);
+      }
+      return;
+    }
+    setTermInput(value);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -144,7 +160,7 @@ export function ShareButton({ sessionId, onCreated }: { sessionId: string; onCre
                 </p>
                 <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
                   入力した語句をサマリーから除外・言い換えて共有します。守秘義務や個人情報の保護に。
-                  カンマ（,／、）・空白でまとめて追加できます。
+                  カンマ（,／、）・空白を打った瞬間に自動で分割されます。
                 </p>
 
                 <div className="flex gap-2">
@@ -152,7 +168,7 @@ export function ShareButton({ sessionId, onCreated }: { sessionId: string; onCre
                     ref={inputRef}
                     type="text"
                     value={termInput}
-                    onChange={(e) => setTermInput(e.target.value)}
+                    onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
                     placeholder="例：山田様、株式会社〇〇 田中商店"
                     className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-slate-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:placeholder-slate-500"
