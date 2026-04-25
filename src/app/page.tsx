@@ -152,7 +152,11 @@ export default function HomePage() {
       {/* クロス分析パネル（通常モード） */}
       {activeClient && !adminMode && showCrossAnalysis && (
         <div className="mb-4 rounded-xl border border-violet-200 bg-white p-5 shadow-sm dark:border-violet-900/40 dark:bg-slate-900">
-          <CrossAnalysisView clientName={activeClient} onClose={() => setShowCrossAnalysis(false)} />
+          <CrossAnalysisView
+            clientName={activeClient}
+            sessions={sessions.filter((s) => s.meta.clientName === activeClient)}
+            onClose={() => setShowCrossAnalysis(false)}
+          />
         </div>
       )}
 

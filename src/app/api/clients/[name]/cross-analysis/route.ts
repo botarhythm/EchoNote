@@ -3,29 +3,45 @@ import { getSessionsByClient } from '@/lib/db';
 import { generateCrossAnalysis } from '@/lib/claude';
 
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ name: string }> }
 ) {
   const { name } = await params;
   const clientName = decodeURIComponent(name);
 
-  const sessions = await getSessionsByClient(clientName);
+  // 任意でリクエストボディから対象セッションIDを受け取る（未指定なら全件対象）
+  let sessionIds: string[] | undefined;
+  try {
+    const body = (await request.json()) as { sessionIds?: string[] };
+    if (Array.isArray(body.sessionIds) && body.sessionIds.length > 0) {
+      sessionIds = body.sessionIds;
+    }
+  } catch {
+    // body 無し（後方互換）
+  }
 
-  if (sessions.length < 2) {
+  const allSessions = await getSessionsByClient(clientName);
+
+  if (allSessions.length < 2) {
     return NextResponse.json(
-      { error: `クロス分析には2セッション以上必要です（現在: ${sessions.length}件）` },
+      { error: `クロス分析には2セッション以上必要です（現在: ${allSessions.length}件）` },
       { status: 400 }
     );
   }
 
-  // サマリーが存在するセッションのみ対象
-  const validSessions = sessions
+  // サマリーが存在するセッションのみ対象。sessionIds 指定時はそれで絞り込み
+  const validSessions = allSessions
     .filter((s) => s.summary)
+    .filter((s) => !sessionIds || sessionIds.includes(s.id))
     .map((s) => ({ id: s.id, date: s.meta.date, summary: s.summary! }));
 
   if (validSessions.length < 2) {
     return NextResponse.json(
-      { error: 'サマリー生成済みのセッションが2件未満です' },
+      {
+        error: sessionIds
+          ? `選択されたセッションのうち、サマリー生成済みは ${validSessions.length} 件のみです（2件以上必要）`
+          : 'サマリー生成済みのセッションが2件未満です',
+      },
       { status: 400 }
     );
   }
