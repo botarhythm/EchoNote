@@ -730,28 +730,29 @@ export async function generateAnonymizedSummary(
 
   const termsText = maskedTerms.map((t) => `- "${t}"`).join('\n');
 
-  const userPrompt = `以下のセッションサマリーを、指定された固有名詞を網羅的に匿名化して再生成してください。
+  const userPrompt = `以下のセッションサマリーを、**指定された語句のみ**を匿名化して再生成してください。
 
-【匿名化する語句（すべての出現箇所を必ず置換）】
+【匿名化する語句（これ以外は絶対に変更しない）】
 ${termsText}
 
-【匿名化のルール — 厳守】
-- 上記語句が**1箇所でも残ったらNG**。次の全フィールドを必ずチェックする：
-  title / clientName / sessionType / clientPains / adviceGiven /
-  nextActions[].task / nextActions[].owner / nextActions[].deadline /
-  homeworkForClient / keyQuotes[].text / keyQuotes[].context /
-  overallAssessment / sessionMoments[].description / sessionMoments[].significance /
-  coachingInsights / underlyingThemes / clientStateShift / nextSessionSuggestions
-- 表記ゆれも置換対象：「山田様」が指定された場合、「山田さん」「山田氏」「山田」も同等に匿名化する
-- 敬称・呼び名のバリエーションも匿名化する（例: "田中" を匿名化するなら "田中部長"・"田中さん" もすべて）
-- 略称・愛称・業界用語的な呼び方も匿名化する
-- 個人名 → 「クライアント」「担当者」「Aさん」「Bさん」など文脈に合う表現
-- 企業名・店名・サービス・商品名 → 「A社」「当該サービス」「該当製品」など
-- タイトル（title）も**必ず匿名化**：固有名詞を含む場合は一般化した表現に書き換える
-- clientName フィールドも**必ず匿名化**（例: 「クライアント」「Aさん」など）
-- 文章が自然に読めるよう適切に言い換える。意味を変えない
-- JSONのキー名・構造は変えない（存在しないフィールドは追加しない）
-- date は変更しない
+【絶対ルール — 厳守】
+1. **リストに無い名前・会社名・店名・地名・商品名・サービス名は一切変更しない。原文のまま残す。**
+   AIによる「念のため」の追加匿名化は禁止。ユーザーが指定した語句だけを処理する。
+2. リストにある語句は、**サマリー全体から漏れなく**置換する。チェック対象フィールド：
+   title / clientName / sessionType / clientPains / adviceGiven /
+   nextActions[].task / nextActions[].owner / nextActions[].deadline /
+   homeworkForClient / keyQuotes[].text / keyQuotes[].context /
+   overallAssessment / sessionMoments[].description / sessionMoments[].significance /
+   coachingInsights / underlyingThemes / clientStateShift / nextSessionSuggestions
+3. 同一エンティティの**自然な敬称・呼称バリエーション**は同等に匿名化する。
+   例: "山田" がリストにある場合 → "山田さん"・"山田様"・"山田氏"・"山田部長" も置換。
+   ただしリストの語句と関連しない別人名・別会社名には絶対に手を出さない。
+4. title フィールドにリスト語句が含まれる場合のみ、自然になるよう書き換える。
+   含まれていなければタイトルもそのまま残す。
+5. 置換後の表現：
+   - 人名 → 「クライアント」「担当者」「Aさん」など文脈に合う一般名詞
+   - 会社・店・サービス → 「A社」「該当店舗」「当該サービス」など
+6. JSONのキー名・構造は変更しない。date は変更しない。意味を変える書き換えは禁止。
 
 【元のサマリーJSON】
 ${JSON.stringify(originalSummary, null, 2)}
