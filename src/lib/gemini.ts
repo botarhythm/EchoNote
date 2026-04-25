@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { writeFileSync, unlinkSync, existsSync, readdirSync } from 'fs';
+import { writeFileSync, unlinkSync, existsSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { spawn } from 'child_process';
@@ -76,15 +76,18 @@ function inputExtFromMime(mimeType: string): string {
   return mimeType.split('/')[1] || 'm4a';
 }
 
-/** 音声バッファを10分チャンクに分割し、チャンクファイルパスの配列を返す */
+/** 音声バッファを10分チャンクに分割し、各チャンクの正確な開始秒を返す */
 async function splitAudio(
   audioBuffer: Buffer,
   mimeType: string,
   sessionId: string
-): Promise<{ paths: string[]; durationPerChunk: number }> {
+): Promise<{ paths: string[]; offsetsSec: number[] }> {
   const ext = inputExtFromMime(mimeType); // audio/mpeg → m4a（コンテナを正しく識別）
   const inputPath = join(tmpdir(), `echonote-input-${sessionId}.${ext}`);
   const outputPattern = join(tmpdir(), `echonote-chunk-${sessionId}-%03d.${ext}`);
+  // -c:a copy ではAACフレーム境界で割るため、実際のチャンク長は600秒ピッタリにならない。
+  // segment_list でFFmpegに正確な開始/終了秒を出力させて、それを使ってオフセットを補正する。
+  const segmentListPath = join(tmpdir(), `echonote-segments-${sessionId}.csv`);
 
   writeFileSync(inputPath, audioBuffer);
 
@@ -94,6 +97,8 @@ async function splitAudio(
       '-i', inputPath,
       '-f', 'segment',
       '-segment_time', String(CHUNK_DURATION_SEC),
+      '-segment_list', segmentListPath,
+      '-segment_list_type', 'csv',
       '-c:a', 'copy', // トランスコードなし（品質劣化なし・高速）
       '-vn',           // 映像ストリームを除外
       '-reset_timestamps', '1',
@@ -128,10 +133,37 @@ async function splitAudio(
     .sort()
     .map((f) => join(dir, f));
 
+  // segment_list CSV をパース: "filename,start_time,end_time"
+  const offsetsSec: number[] = [];
+  if (existsSync(segmentListPath)) {
+    try {
+      const csv = readFileSync(segmentListPath, 'utf-8');
+      const map = new Map<string, number>();
+      for (const line of csv.split(/\r?\n/)) {
+        const cols = line.split(',');
+        if (cols.length < 2) continue;
+        const fname = cols[0]?.trim();
+        const start = Number(cols[1]);
+        if (fname && Number.isFinite(start)) map.set(fname, start);
+      }
+      for (const p of chunkPaths) {
+        const base = p.split(/[\\/]/).pop()!;
+        const s = map.get(base);
+        offsetsSec.push(s ?? offsetsSec.length * CHUNK_DURATION_SEC);
+      }
+      unlinkSync(segmentListPath);
+    } catch {
+      // フォールバック: 名目600秒ピッチ
+      for (let i = 0; i < chunkPaths.length; i++) offsetsSec.push(i * CHUNK_DURATION_SEC);
+    }
+  } else {
+    for (let i = 0; i < chunkPaths.length; i++) offsetsSec.push(i * CHUNK_DURATION_SEC);
+  }
+
   // 入力ファイルを削除
   if (existsSync(inputPath)) unlinkSync(inputPath);
 
-  return { paths: chunkPaths, durationPerChunk: CHUNK_DURATION_SEC };
+  return { paths: chunkPaths, offsetsSec };
 }
 
 // ─── Gemini Files API ──────────────────────────────────────────────────────
@@ -245,35 +277,90 @@ async function transcribeChunk(
 
   const text = result.text ?? '';
 
-  // JSON解析エラーは非致命的に（空レスポンス・切れたJSONを許容してスキップ）
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    console.warn(`[EchoNote] チャンク${chunkIndex}: JSON解析失敗（空または不完全なレスポンス）、スキップします`);
-    return [];
-  }
-  if (!Array.isArray(parsed)) {
-    console.warn(`[EchoNote] チャンク${chunkIndex}: レスポンスがJSON配列ではありません、スキップします`);
+  // JSON解析: 切り詰めや末尾不正を許容して、復元可能な発話だけ拾う
+  const parsed = tolerantParseUtteranceArray(text);
+  if (parsed.length === 0) {
+    console.warn(`[EchoNote] チャンク${chunkIndex}: JSON解析失敗または空レスポンス`);
     return [];
   }
 
   // タイムスタンプにオフセットを加算
-  return (parsed as Record<string, unknown>[]).map((item) => {
+  return parsed.map((item) => {
     const ts = (item.timestamp as string) || '00:00:00';
     const adjusted = addSecondsToTimestamp(ts, offsetSec);
     return {
-      speaker: item.speaker as 'A' | 'B',
+      speaker: (item.speaker === 'B' ? 'B' : 'A') as 'A' | 'B',
       timestamp: adjusted,
-      text: item.text as string,
+      text: typeof item.text === 'string' ? item.text : '',
     };
-  });
+  }).filter((u) => u.text.length > 0);
 }
 
-/** "HH:MM:SS" にオフセット秒を加算して返す */
+/**
+ * JSON配列をできる限り復元する。
+ * 完全な配列ならJSON.parse、途中で切れている場合は閉じ括弧を補ったり、
+ * 個別オブジェクトを抽出して回復する。
+ */
+function tolerantParseUtteranceArray(text: string): Array<Record<string, unknown>> {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+
+  // ① 厳密パース
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) return parsed as Array<Record<string, unknown>>;
+  } catch {
+    // 続けて緩いパース
+  }
+
+  // ② 配列の開始を探し、ブレース深度を追って完全なオブジェクトを切り出す
+  const startIdx = trimmed.indexOf('[');
+  const scanFrom = startIdx >= 0 ? startIdx + 1 : 0;
+  const items: Array<Record<string, unknown>> = [];
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let objStart = -1;
+
+  for (let i = scanFrom; i < trimmed.length; i++) {
+    const c = trimmed[i];
+    if (escape) { escape = false; continue; }
+    if (c === '\\') { escape = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (inString) continue;
+
+    if (c === '{') {
+      if (depth === 0) objStart = i;
+      depth++;
+    } else if (c === '}') {
+      depth--;
+      if (depth === 0 && objStart !== -1) {
+        const objText = trimmed.slice(objStart, i + 1);
+        try {
+          const obj = JSON.parse(objText);
+          if (obj && typeof obj === 'object') items.push(obj as Record<string, unknown>);
+        } catch {
+          // この一個だけ壊れていても無視して次へ
+        }
+        objStart = -1;
+      }
+    }
+  }
+
+  if (items.length > 0) {
+    console.log(`[EchoNote] 切り詰めJSON救済: ${items.length} 発話を復元`);
+  }
+  return items;
+}
+
+/** "HH:MM:SS" にオフセット秒を加算して返す（小数秒は四捨五入） */
 function addSecondsToTimestamp(ts: string, offsetSec: number): string {
   const parts = ts.split(':').map(Number);
-  let totalSec = (parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0) + offsetSec;
+  let totalSec = Math.round(
+    (parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0) + offsetSec
+  );
+  if (totalSec < 0) totalSec = 0;
   const h = Math.floor(totalSec / 3600);
   totalSec %= 3600;
   const m = Math.floor(totalSec / 60);
@@ -307,11 +394,14 @@ export async function transcribeAudio(
   let chunkPaths: string[] = [];
   let useChunked = false;
 
+  let offsetsSec: number[] = [];
+
   try {
-    const { paths } = await splitAudio(audioBuffer, mimeType, tmpId);
-    chunkPaths = paths;
+    const split = await splitAudio(audioBuffer, mimeType, tmpId);
+    chunkPaths = split.paths;
+    offsetsSec = split.offsetsSec;
     useChunked = chunkPaths.length > 1;
-    console.log(`[EchoNote] 音声を ${chunkPaths.length} チャンクに分割`);
+    console.log(`[EchoNote] 音声を ${chunkPaths.length} チャンクに分割（オフセット: ${offsetsSec.map((s) => s.toFixed(1)).join(', ')} 秒）`);
   } catch (err) {
     // FFmpegが使えない環境ではシングル処理にフォールバック
     console.warn('[EchoNote] チャンク分割スキップ（FFmpeg利用不可）:', err instanceof Error ? err.message : err);
@@ -378,7 +468,9 @@ export async function transcribeAudio(
   for (let i = 0; i < total; i++) {
     const idx = i;
     const path = chunkPaths[idx]!;
-    const offsetSec = idx * CHUNK_DURATION_SEC;
+    // segment_list から得た正確な開始秒を使用（-c:a copy ではAACフレーム境界に揃うため
+    // 名目600秒ピッチではなく実測値が必要）
+    const offsetSec = offsetsSec[idx] ?? idx * CHUNK_DURATION_SEC;
     const ctx = prevContext;
 
     await onProgress?.(`✍️ チャンク ${idx + 1}/${total} を文字起こし中...`);
@@ -416,7 +508,7 @@ export async function transcribeAudio(
       // 現時点で完了しているチャンクをDBに保存（サーバー再起動対策）
       if (sessionId) {
         const partial = allUtterances.filter(Boolean).flat()
-          .sort((a: Utterance, b: Utterance) => a.timestamp.localeCompare(b.timestamp));
+          .sort((a, b) => timestampToSeconds(a.timestamp) - timestampToSeconds(b.timestamp));
         if (partial.length > 0) {
           await savePartialTranscript(sessionId, partial).catch(() => {});
         }
@@ -429,24 +521,40 @@ export async function transcribeAudio(
 
   await onProgress?.('🔗 チャンクをマージ中...');
 
-  // 全チャンクをフラット化してタイムスタンプ順にソート
+  // 欠損チェック: 全チャンクが空でないか確認
+  const emptyChunks = allUtterances
+    .map((u, i) => (!u || u.length === 0 ? i + 1 : null))
+    .filter((v): v is number => v !== null);
+  if (emptyChunks.length > 0) {
+    console.warn(`[EchoNote] 文字起こしが空のチャンク: ${emptyChunks.join(', ')}`);
+  }
+
+  // 全チャンクをフラット化してタイムスタンプ秒順にソート（文字列比較ではなく数値で）
   const merged = allUtterances
     .filter(Boolean)
     .flat()
-    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    .sort((a, b) => timestampToSeconds(a.timestamp) - timestampToSeconds(b.timestamp));
 
   console.log(`[EchoNote] マージ完了: 合計 ${merged.length} 発話`);
   return merged;
 }
 
+/** "HH:MM:SS" を総秒数に変換 */
+function timestampToSeconds(ts: string): number {
+  const parts = ts.split(':').map(Number);
+  return (parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0);
+}
+
 function parseResult(text: string): Utterance[] {
-  const parsed = JSON.parse(text) as unknown;
-  if (!Array.isArray(parsed)) {
-    throw new Error('AIの応答がJSON配列ではありません');
+  const items = tolerantParseUtteranceArray(text);
+  if (items.length === 0) {
+    throw new Error('AIの応答から発話を1件も復元できませんでした');
   }
-  return (parsed as Record<string, unknown>[]).map((item) => ({
-    speaker: item.speaker as 'A' | 'B',
-    timestamp: (item.timestamp as string) || '00:00:00',
-    text: item.text as string,
-  }));
+  return items
+    .map((item) => ({
+      speaker: (item.speaker === 'B' ? 'B' : 'A') as 'A' | 'B',
+      timestamp: (item.timestamp as string) || '00:00:00',
+      text: typeof item.text === 'string' ? item.text : '',
+    }))
+    .filter((u) => u.text.length > 0);
 }
