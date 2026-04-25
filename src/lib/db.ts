@@ -218,11 +218,23 @@ export async function getSessionTranscript(id: string): Promise<Utterance[] | nu
   return json ? (JSON.parse(json) as Utterance[]) : null;
 }
 
+/**
+ * 時系列順 ORDER BY 句。
+ * - session_date が有効な YYYY-MM-DD の場合は date_priority=0 で日付降順
+ * - '不明' など不正な値は date_priority=1 で末尾に回し、created_at 降順で並べる
+ * - 同一日付の場合は created_at で安定ソート
+ * AI が推測した session_date が信頼できない場合でも、登録時刻ベースで時系列が保たれる。
+ */
+const ORDER_BY_CHRONOLOGICAL = `
+  ORDER BY
+    CASE WHEN session_date ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN 0 ELSE 1 END,
+    session_date DESC,
+    created_at DESC
+`;
+
 export async function getAllSessions(): Promise<Session[]> {
   const p = getPool();
-  const res = await p.query(
-    'SELECT * FROM sessions ORDER BY session_date DESC, created_at DESC'
-  );
+  const res = await p.query(`SELECT * FROM sessions ${ORDER_BY_CHRONOLOGICAL}`);
   return (res.rows as SessionRow[]).map(rowToSession);
 }
 
@@ -236,7 +248,7 @@ export async function getAllSessionsLite(): Promise<Session[]> {
     `SELECT id, filename, client_name, session_date, memo, mime_type, status,
             summary_json, error_message, progress_message, created_at, processed_at
      FROM sessions
-     ORDER BY session_date DESC, created_at DESC`
+     ${ORDER_BY_CHRONOLOGICAL}`
   );
   return (res.rows as Omit<SessionRow, 'transcript_json'>[]).map((row) =>
     rowToSession({ ...row, transcript_json: null })
@@ -323,10 +335,27 @@ export async function getShareData(token: string): Promise<ShareData | null> {
     session.transcript = JSON.parse(row.anonymized_transcript_json) as Session['transcript'];
   }
 
+  // 匿名化共有時は meta も匿名化値で上書き（共有ページ・SessionCard 等で
+  // meta.clientName / originalFilename / memo がそのまま表示されるのを防ぐ）
+  const maskedTerms = row.masked_terms ? (JSON.parse(row.masked_terms) as string[]) : undefined;
+  if (row.anonymized_summary_json && session.summary) {
+    const masked = (s: string | undefined): string | undefined => {
+      if (!s || !maskedTerms || maskedTerms.length === 0) return s;
+      const sorted = [...maskedTerms].filter((t) => t.length > 0).sort((a, b) => b.length - a.length);
+      return sorted.reduce((text, term) => text.split(term).join('●●'), s);
+    };
+    session.meta = {
+      ...session.meta,
+      clientName: session.summary.clientName || masked(session.meta.clientName) || session.meta.clientName,
+      originalFilename: masked(session.meta.originalFilename) ?? session.meta.originalFilename,
+      memo: masked(session.meta.memo),
+    };
+  }
+
   return {
     session,
     isAnonymized: !!row.anonymized_summary_json,
-    maskedTerms: row.masked_terms ? (JSON.parse(row.masked_terms) as string[]) : undefined,
+    maskedTerms,
   };
 }
 

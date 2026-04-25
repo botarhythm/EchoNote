@@ -67,7 +67,8 @@ export default function SharePage() {
           {session.summary?.title}
         </h1>
         <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-          {session.meta?.date} &middot; {session.meta?.clientName}
+          {session.summary?.date || session.meta?.date} &middot;{' '}
+          {session.summary?.clientName || session.meta?.clientName}
         </p>
       </header>
 
