@@ -230,10 +230,16 @@ ${prevContext}
 [
   {
     "speaker": "A" または "B",
-    "timestamp": "HH:MM:SS",
+    "offset_sec": チャンク先頭からの経過秒（整数のみ）,
     "text": "発話内容"
   }
 ]
+
+【タイムスタンプの厳守事項】
+- offset_sec はチャンクの先頭を 0 とした経過秒数を **整数** で出力してください。
+- "1:23" や "01:23" のような文字列は絶対に使わないこと。
+- チャンクは最大10分（600秒）です。offset_sec が 600 を超えることはありません。
+- 例: チャンク開始から1分23秒の発話 → "offset_sec": 83
 
 【ルール】
 - 話者が切り替わるたびに新しい要素を作る
@@ -286,8 +292,17 @@ async function transcribeChunk(
 
   // タイムスタンプにオフセットを加算
   return parsed.map((item) => {
-    const ts = (item.timestamp as string) || '00:00:00';
-    const adjusted = addSecondsToTimestamp(ts, offsetSec);
+    // 新形式: offset_sec（整数）優先。古い文字列形式は後方互換でフォールバック。
+    let secInChunk = 0;
+    if (typeof item.offset_sec === 'number' && Number.isFinite(item.offset_sec)) {
+      // チャンク長(600秒)を超える値はモデルの誤りなので 0..600 にクランプ
+      secInChunk = Math.max(0, Math.min(600, item.offset_sec));
+    } else if (typeof item.timestamp === 'string') {
+      const parsedSec = timestampStringToSeconds(item.timestamp);
+      // チャンクは最大10分なので、それを超える値は誤解釈の可能性大 → クランプ
+      secInChunk = Math.max(0, Math.min(600, parsedSec));
+    }
+    const adjusted = secondsToTimestamp(secInChunk + offsetSec);
     return {
       speaker: (item.speaker === 'B' ? 'B' : 'A') as 'A' | 'B',
       timestamp: adjusted,
@@ -354,18 +369,35 @@ function tolerantParseUtteranceArray(text: string): Array<Record<string, unknown
   return items;
 }
 
-/** "HH:MM:SS" にオフセット秒を加算して返す（小数秒は四捨五入） */
-function addSecondsToTimestamp(ts: string, offsetSec: number): string {
-  const parts = ts.split(':').map(Number);
-  let totalSec = Math.round(
-    (parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0) + offsetSec
-  );
-  if (totalSec < 0) totalSec = 0;
-  const h = Math.floor(totalSec / 3600);
-  totalSec %= 3600;
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
+/**
+ * Geminiが返すタイムスタンプを秒に変換する。
+ * 形式が様々で来るため、桁数で解釈を切り替える:
+ *   "HH:MM:SS"   (3要素) → 通常の時:分:秒
+ *   "MM:SS"      (2要素) → 分:秒（過去のバグでこれを HH:MM と誤解釈し、データ崩壊が発生していた）
+ *   "SS"         (1要素) → 秒のみ
+ */
+function timestampStringToSeconds(ts: string): number {
+  const parts = ts.split(':').map((p) => Number(p));
+  if (parts.length >= 3) {
+    return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+  }
+  if (parts.length === 2) {
+    return (parts[0] || 0) * 60 + (parts[1] || 0);
+  }
+  return parts[0] || 0;
+}
+
+function secondsToTimestamp(totalSec: number): string {
+  const s0 = Math.max(0, Math.round(totalSec));
+  const h = Math.floor(s0 / 3600);
+  const m = Math.floor((s0 % 3600) / 60);
+  const s = s0 % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+/** タイムスタンプにオフセット秒を加算して "HH:MM:SS" を返す */
+function addSecondsToTimestamp(ts: string, offsetSec: number): string {
+  return secondsToTimestamp(timestampStringToSeconds(ts) + offsetSec);
 }
 
 /** チャンク末尾の発話を次チャンクへのコンテキストとして整形 */
@@ -539,10 +571,9 @@ export async function transcribeAudio(
   return merged;
 }
 
-/** "HH:MM:SS" を総秒数に変換 */
+/** "HH:MM:SS" / "MM:SS" / "SS" のいずれも秒に変換（パース時のバグ防止用） */
 function timestampToSeconds(ts: string): number {
-  const parts = ts.split(':').map(Number);
-  return (parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0);
+  return timestampStringToSeconds(ts);
 }
 
 function parseResult(text: string): Utterance[] {
@@ -551,10 +582,18 @@ function parseResult(text: string): Utterance[] {
     throw new Error('AIの応答から発話を1件も復元できませんでした');
   }
   return items
-    .map((item) => ({
-      speaker: (item.speaker === 'B' ? 'B' : 'A') as 'A' | 'B',
-      timestamp: (item.timestamp as string) || '00:00:00',
-      text: typeof item.text === 'string' ? item.text : '',
-    }))
+    .map((item) => {
+      let sec = 0;
+      if (typeof item.offset_sec === 'number' && Number.isFinite(item.offset_sec)) {
+        sec = Math.max(0, item.offset_sec);
+      } else if (typeof item.timestamp === 'string') {
+        sec = Math.max(0, timestampStringToSeconds(item.timestamp));
+      }
+      return {
+        speaker: (item.speaker === 'B' ? 'B' : 'A') as 'A' | 'B',
+        timestamp: secondsToTimestamp(sec),
+        text: typeof item.text === 'string' ? item.text : '',
+      };
+    })
     .filter((u) => u.text.length > 0);
 }
