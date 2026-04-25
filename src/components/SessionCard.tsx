@@ -18,6 +18,7 @@ export function SessionCard({
 }) {
   const [retrying, setRetrying] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmReprocess, setConfirmReprocess] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const handleRetry = async (e: React.MouseEvent) => {
@@ -31,6 +32,33 @@ export function SessionCard({
     } finally {
       setRetrying(false);
     }
+  };
+
+  const handleReprocessClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setConfirmReprocess(true);
+  };
+
+  const handleReprocessConfirm = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setRetrying(true);
+    try {
+      await fetch(`/api/sessions/${session.id}`, { method: 'POST' });
+      onRetry?.();
+    } catch {
+      // ignore
+    } finally {
+      setRetrying(false);
+      setConfirmReprocess(false);
+    }
+  };
+
+  const handleReprocessCancel = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setConfirmReprocess(false);
   };
 
   const handleDeleteClick = (e: React.MouseEvent) => {
@@ -77,8 +105,20 @@ export function SessionCard({
 
         <div className="flex shrink-0 items-start gap-2">
           <StatusBadge status={session.status} />
+          {/* 再処理ボタン（管理モード・done セッションのみ） */}
+          {adminMode && session.status === 'done' && !confirmDelete && !confirmReprocess && (
+            <button
+              onClick={handleReprocessClick}
+              className="rounded p-2 text-slate-400 transition-colors hover:bg-amber-50 hover:text-amber-600 active:bg-amber-100 dark:text-slate-500 dark:hover:bg-amber-900/20 dark:hover:text-amber-400"
+              title="再処理（書き起こし・サマリーを再生成）"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+          )}
           {/* 削除ボタン（管理モード時のみ・常時表示） */}
-          {adminMode && !confirmDelete && (
+          {adminMode && !confirmDelete && !confirmReprocess && (
             <button
               onClick={handleDeleteClick}
               className="rounded p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 active:bg-red-100 dark:text-slate-500 dark:hover:bg-red-950/20 dark:hover:text-red-400"
@@ -124,6 +164,33 @@ export function SessionCard({
         </div>
       )}
 
+      {/* 再処理確認 */}
+      {confirmReprocess && (
+        <div
+          className="mt-3 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 dark:border-amber-800/40 dark:bg-amber-950/20"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p className="flex-1 text-xs text-amber-800 dark:text-amber-300">
+            このセッションを再処理しますか？（書き起こしとサマリーが再生成され、AI料金が発生します）
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={handleReprocessCancel}
+              className="rounded px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+            >
+              キャンセル
+            </button>
+            <button
+              onClick={handleReprocessConfirm}
+              disabled={retrying}
+              className="rounded bg-amber-600 px-2 py-1 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+            >
+              {retrying ? '実行中...' : '再処理する'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 削除確認 */}
       {confirmDelete && (
         <div
@@ -153,8 +220,8 @@ export function SessionCard({
     </div>
   );
 
-  // 削除確認中・削除中はリンクを無効化
-  if (session.status === 'done' && !confirmDelete && !deleting) {
+  // 削除確認・再処理確認・削除中はリンクを無効化
+  if (session.status === 'done' && !confirmDelete && !confirmReprocess && !deleting) {
     return <Link href={`/session/${session.id}`}>{cardContent}</Link>;
   }
 

@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, deleteSession, updateStatus } from '@/lib/db';
+import { getSession, getSessionLite, deleteSession, updateStatus } from '@/lib/db';
 import { retrySession } from '@/lib/poller';
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  // ?full=1 を指定された場合のみ transcript を含めて返す。デフォルトは軽量レスポンス。
+  const includeTranscript = request.nextUrl.searchParams.get('full') === '1';
+  const session = includeTranscript ? await getSession(id) : await getSessionLite(id);
 
   if (!session) {
     return NextResponse.json({ error: 'セッションが見つかりません' }, { status: 404 });

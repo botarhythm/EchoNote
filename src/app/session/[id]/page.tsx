@@ -31,16 +31,43 @@ export default function SessionDetailPage() {
 
   const loadSession = useCallback(async () => {
     try {
+      // 軽量レスポンス（transcriptは含まない）。書き起こしは別フェッチで取得する。
       const res = await fetch(`/api/sessions/${params.id}`);
       if (!res.ok) { setError('セッションが見つかりません'); return; }
       const data = (await res.json()) as { session: Session };
-      setSession(data.session);
+      setSession((prev) => {
+        // 既に transcript を取得済みなら維持する（lite レスポンスで上書きしない）
+        if (prev?.transcript && !data.session.transcript) {
+          return { ...data.session, transcript: prev.transcript };
+        }
+        return data.session;
+      });
     } catch {
       setError('読み込みエラー');
     }
   }, [params.id]);
 
+  const loadTranscript = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/sessions/${params.id}/transcript`);
+      if (!res.ok) return;
+      const data = (await res.json()) as { transcript: Utterance[] | null };
+      if (data.transcript) {
+        setSession((prev) => (prev ? { ...prev, transcript: data.transcript ?? undefined } : prev));
+      }
+    } catch {
+      // 失敗しても致命的ではない（タブ切替時に再試行可能）
+    }
+  }, [params.id]);
+
   useEffect(() => { loadSession(); }, [loadSession]);
+
+  // セッションが完了状態なら transcript をバックグラウンドで取得
+  useEffect(() => {
+    if (session?.status === 'done' && !session.transcript) {
+      loadTranscript();
+    }
+  }, [session?.status, session?.transcript, loadTranscript]);
 
   useEffect(() => {
     const clientName = session?.meta.clientName;

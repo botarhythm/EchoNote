@@ -192,6 +192,32 @@ export async function getSession(id: string): Promise<Session | null> {
   return res.rows.length > 0 ? rowToSession(res.rows[0] as SessionRow) : null;
 }
 
+/**
+ * 詳細ページ用: transcript_json を除外して取得（書き起こしは別エンドポイントで取る）。
+ * 1時間超のセッションでは transcript JSON が数MBになるため、毎回返すと体感が悪化する。
+ */
+export async function getSessionLite(id: string): Promise<Session | null> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, filename, client_name, session_date, memo, mime_type, status,
+            summary_json, error_message, progress_message, created_at, processed_at
+     FROM sessions WHERE id = $1`,
+    [id]
+  );
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0] as Omit<SessionRow, 'transcript_json'>;
+  return rowToSession({ ...row, transcript_json: null });
+}
+
+/** transcript_json のみを取得 */
+export async function getSessionTranscript(id: string): Promise<Utterance[] | null> {
+  const p = getPool();
+  const res = await p.query('SELECT transcript_json FROM sessions WHERE id = $1', [id]);
+  if (res.rows.length === 0) return null;
+  const json = (res.rows[0] as { transcript_json: string | null }).transcript_json;
+  return json ? (JSON.parse(json) as Utterance[]) : null;
+}
+
 export async function getAllSessions(): Promise<Session[]> {
   const p = getPool();
   const res = await p.query(
