@@ -1,10 +1,29 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import type { SessionSummary } from '@/lib/types';
-import { MindMap } from './MindMap';
-import { RelationshipGraph } from './RelationshipGraph';
-import { Infographic } from './Infographic';
+
+// 重いライブラリ（@xyflow/react, dagre, recharts）を含むため遅延ロード
+// 初回ページ遷移時に同期評価されないようにし、書き起こし/サマリータブの切り替えも軽量にする
+const VizFallback = () => (
+  <div className="flex h-[640px] w-full items-center justify-center rounded-lg border border-slate-200 bg-slate-50/50 text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-500">
+    可視化を読み込み中...
+  </div>
+);
+
+const MindMap = dynamic(() => import('./MindMap').then((m) => m.MindMap), {
+  ssr: false,
+  loading: VizFallback,
+});
+const RelationshipGraph = dynamic(
+  () => import('./RelationshipGraph').then((m) => m.RelationshipGraph),
+  { ssr: false, loading: VizFallback }
+);
+const Infographic = dynamic(() => import('./Infographic').then((m) => m.Infographic), {
+  ssr: false,
+  loading: VizFallback,
+});
 
 type VizTab = 'mindmap' | 'relationship' | 'infographic';
 

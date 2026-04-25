@@ -44,10 +44,10 @@ export default function SharePage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
+    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
       <div className="mb-6 flex items-center justify-between">
-        <div className="text-xs text-slate-400 dark:text-slate-500">
-          EchoNote 共有セッション
+        <div className="text-xs uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+          EchoNote · Shared Session
         </div>
         <ThemeToggle />
       </div>
@@ -58,12 +58,18 @@ export default function SharePage() {
         </div>
       )}
 
-      <h1 className="mb-1 text-2xl font-bold text-slate-900 dark:text-slate-100">
-        {session.summary?.title}
-      </h1>
-      <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">
-        {session.meta?.date} &middot; {session.meta?.clientName}
-      </p>
+      {/* ── 紙面風タイトルブロック ── */}
+      <header className="mx-auto mb-6 max-w-[760px] text-center">
+        <p className="mb-2 font-serif text-[11px] tracking-[0.3em] text-slate-400 dark:text-slate-500">
+          SESSION SUMMARY
+        </p>
+        <h1 className="font-serif text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-[1.75rem]">
+          {session.summary?.title}
+        </h1>
+        <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+          {session.meta?.date} &middot; {session.meta?.clientName}
+        </p>
+      </header>
 
       {/* コンテンツ */}
       {session.summary ? (

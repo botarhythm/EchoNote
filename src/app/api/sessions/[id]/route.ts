@@ -46,6 +46,7 @@ export async function PATCH(
     title?: string;
     clientName?: string;
     date?: string;
+    transcript?: Array<{ speaker: 'A' | 'B'; timestamp: string; text: string }>;
   };
 
   const updates: Parameters<typeof updateStatus>[2] = {};
@@ -68,6 +69,17 @@ export async function PATCH(
         ...(typeof body.date === 'string' && { date: body.date.trim() }),
       };
     }
+  }
+
+  if (Array.isArray(body.transcript)) {
+    const sanitized = body.transcript
+      .filter((u) => u && (u.speaker === 'A' || u.speaker === 'B'))
+      .map((u) => ({
+        speaker: u.speaker,
+        timestamp: typeof u.timestamp === 'string' ? u.timestamp : '',
+        text: typeof u.text === 'string' ? u.text : '',
+      }));
+    updates.transcript = sanitized;
   }
 
   if (Object.keys(updates).length === 0) {

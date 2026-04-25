@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import type { Session, SessionSummary, SpeakerNames, ClientSettings } from '@/lib/types';
+import type { Session, SessionSummary, SpeakerNames, ClientSettings, Utterance } from '@/lib/types';
 import { getSummaryMode } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { SummaryView } from '@/components/SummaryView';
@@ -77,6 +77,25 @@ export default function SessionDetailPage() {
     if (e.key === 'Enter') handleTitleSave();
     if (e.key === 'Escape') setEditingTitle(false);
   };
+
+  const handleTranscriptSave = useCallback(
+    async (next: Utterance[]) => {
+      if (!session) return;
+      // 楽観的更新
+      setSession((prev) => (prev ? { ...prev, transcript: next } : prev));
+      const res = await fetch(`/api/sessions/${session.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: next }),
+      });
+      if (!res.ok) {
+        // 失敗時はサーバ状態に戻す
+        await loadSession();
+        throw new Error('保存に失敗しました');
+      }
+    },
+    [session, loadSession]
+  );
 
   const handleMetaSave = async () => {
     if (!session) { setEditingMeta(false); return; }
@@ -298,7 +317,12 @@ export default function SessionDetailPage() {
       ) : activeTab === 'summary' ? (
         <p className="text-slate-500 dark:text-slate-400">サマリーはまだ生成されていません</p>
       ) : session.transcript ? (
-        <TranscriptView transcript={session.transcript} speakerNames={speakerNames} />
+        <TranscriptView
+          transcript={session.transcript}
+          speakerNames={speakerNames}
+          editable={session.status === 'done'}
+          onSave={handleTranscriptSave}
+        />
       ) : (
         <p className="text-slate-500 dark:text-slate-400">書き起こしはまだ完了していません</p>
       )}
