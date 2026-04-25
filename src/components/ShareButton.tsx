@@ -64,11 +64,27 @@ export function ShareButton({ sessionId, onCreated }: { sessionId: string; onCre
   };
 
   const addTerm = (term?: string) => {
-    const value = (term ?? termInput).trim();
-    if (value && !maskedTerms.includes(value)) {
-      setMaskedTerms((prev) => [...prev, value]);
-      setSuggestedTerms((prev) => prev.filter((t) => t !== value));
+    const raw = term ?? termInput;
+    // カンマ（半角/全角）・読点・空白で複数語を一度に追加できるようにする
+    const tokens = raw
+      .split(/[,、\s]+/u)
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0);
+    if (tokens.length === 0) {
+      if (!term) {
+        setTermInput('');
+        inputRef.current?.focus();
+      }
+      return;
     }
+    setMaskedTerms((prev) => {
+      const next = [...prev];
+      for (const t of tokens) {
+        if (!next.includes(t)) next.push(t);
+      }
+      return next;
+    });
+    setSuggestedTerms((prev) => prev.filter((t) => !tokens.includes(t)));
     if (!term) {
       setTermInput('');
       inputRef.current?.focus();
@@ -127,6 +143,7 @@ export function ShareButton({ sessionId, onCreated }: { sessionId: string; onCre
                 </p>
                 <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
                   入力した語句をサマリーから除外・言い換えて共有します。守秘義務や個人情報の保護に。
+                  カンマ（,／、）・空白でまとめて追加できます。
                 </p>
 
                 <div className="flex gap-2">
@@ -136,7 +153,7 @@ export function ShareButton({ sessionId, onCreated }: { sessionId: string; onCre
                     value={termInput}
                     onChange={(e) => setTermInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="例：山田様、株式会社〇〇"
+                    placeholder="例：山田様、株式会社〇〇 田中商店"
                     className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-slate-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:placeholder-slate-500"
                   />
                   <button
