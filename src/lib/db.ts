@@ -200,6 +200,23 @@ export async function getAllSessions(): Promise<Session[]> {
   return (res.rows as SessionRow[]).map(rowToSession);
 }
 
+/**
+ * 一覧表示用：transcript_json を除外して取得（書き起こしは詳細ページでのみ必要）。
+ * 大量の発話を含む transcript を毎回ロードすると一覧APIが重くなるため。
+ */
+export async function getAllSessionsLite(): Promise<Session[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, filename, client_name, session_date, memo, mime_type, status,
+            summary_json, error_message, progress_message, created_at, processed_at
+     FROM sessions
+     ORDER BY session_date DESC, created_at DESC`
+  );
+  return (res.rows as Omit<SessionRow, 'transcript_json'>[]).map((row) =>
+    rowToSession({ ...row, transcript_json: null })
+  );
+}
+
 /** クライアント名でフィルタし、完了済みセッションを日付昇順で返す（クロス分析用） */
 export async function getSessionsByClient(clientName: string): Promise<Session[]> {
   const p = getPool();

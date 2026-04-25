@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import type { Session, SessionSummary, SpeakerNames, ClientSettings, Utterance } from '@/lib/types';
 import { getSummaryMode } from '@/lib/types';
+import { useSessionsStore } from '@/store/sessions';
 import { StatusBadge } from '@/components/StatusBadge';
 import { SummaryView } from '@/components/SummaryView';
 import { TranscriptView } from '@/components/TranscriptView';
@@ -16,7 +17,10 @@ type Tab = 'summary' | 'transcript';
 
 export default function SessionDetailPage() {
   const params = useParams<{ id: string }>();
-  const [session, setSession] = useState<Session | null>(null);
+  // 初回マウント時にトップページのストアから即座に取得し、再フェッチ待ちのレイテンシを排除する
+  const [session, setSession] = useState<Session | null>(() => {
+    return useSessionsStore.getState().sessions.find((s) => s.id === params.id) ?? null;
+  });
   const [clientSettings, setClientSettings] = useState<ClientSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('summary');
@@ -323,6 +327,8 @@ export default function SessionDetailPage() {
           editable={session.status === 'done'}
           onSave={handleTranscriptSave}
         />
+      ) : session.status === 'done' ? (
+        <p className="text-slate-500 dark:text-slate-400">書き起こしを読み込み中...</p>
       ) : (
         <p className="text-slate-500 dark:text-slate-400">書き起こしはまだ完了していません</p>
       )}

@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { getAllSessions } from '@/lib/db';
+import { getAllSessionsLite } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const sessions = await getAllSessions();
+    const sessions = await getAllSessionsLite();
     return NextResponse.json({ sessions });
   } catch (err) {
     return NextResponse.json(
