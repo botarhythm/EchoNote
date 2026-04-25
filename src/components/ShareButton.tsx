@@ -65,9 +65,10 @@ export function ShareButton({ sessionId, onCreated }: { sessionId: string; onCre
 
   const addTerm = (term?: string) => {
     const raw = term ?? termInput;
-    // カンマ（半角/全角）・読点・空白で複数語を一度に追加できるようにする
+    // カンマ（半角/全角）・読点・各種空白（半角/全角/NBSP/タブ/改行）で複数語を一度に追加できるようにする
+    // ブラウザ JS エンジンによる \s の挙動差を避けるため U+3000 と U+00A0 を明示
     const tokens = raw
-      .split(/[,、\s]+/u)
+      .split(/[,，、　 \s]+/u)
       .map((t) => t.trim())
       .filter((t) => t.length > 0);
     if (tokens.length === 0) {
