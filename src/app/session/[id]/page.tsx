@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import type { Session, SessionSummary, SpeakerNames, ClientSettings, Utterance } from '@/lib/types';
 import { getSummaryMode } from '@/lib/types';
@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { SummaryView } from '@/components/SummaryView';
 import { TranscriptView } from '@/components/TranscriptView';
 import { SummaryVisualizations } from '@/components/SummaryVisualizations';
+import { TranscriptDiffPanel } from '@/components/TranscriptDiffPanel';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { SessionActionBar } from '@/components/SessionActionBar';
 
@@ -17,6 +18,8 @@ type Tab = 'summary' | 'transcript';
 
 export default function SessionDetailPage() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+  const adminMode = searchParams.get('admin') === '1';
   // 初回マウント時にトップページのストアから即座に取得し、再フェッチ待ちのレイテンシを排除する
   const [session, setSession] = useState<Session | null>(() => {
     return useSessionsStore.getState().sessions.find((s) => s.id === params.id) ?? null;
@@ -28,6 +31,7 @@ export default function SessionDetailPage() {
   const [titleDraft, setTitleDraft] = useState('');
   const [editingMeta, setEditingMeta] = useState(false);
   const [metaDraft, setMetaDraft] = useState({ clientName: '', date: '' });
+  const [diffPanelOpen, setDiffPanelOpen] = useState(false);
 
   const loadSession = useCallback(async () => {
     try {
@@ -348,12 +352,39 @@ export default function SessionDetailPage() {
       ) : activeTab === 'summary' ? (
         <p className="text-slate-500 dark:text-slate-400">サマリーはまだ生成されていません</p>
       ) : session.transcript ? (
-        <TranscriptView
-          transcript={session.transcript}
-          speakerNames={speakerNames}
-          editable={session.status === 'done'}
-          onSave={handleTranscriptSave}
-        />
+        <div className="space-y-4">
+          {adminMode && session.status === 'done' && (
+            <div className="flex justify-end">
+              <button
+                onClick={() => setDiffPanelOpen((v) => !v)}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors active:scale-95 ${
+                  diffPanelOpen
+                    ? 'border-violet-400 bg-violet-50 text-violet-700 dark:border-violet-600 dark:bg-violet-900/20 dark:text-violet-300'
+                    : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'
+                }`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+                Drive書き起こしと照合
+              </button>
+            </div>
+          )}
+          {diffPanelOpen && (
+            <TranscriptDiffPanel
+              sessionId={session.id}
+              echonoteTranscript={session.transcript}
+              speakerNames={speakerNames}
+              onClose={() => setDiffPanelOpen(false)}
+            />
+          )}
+          <TranscriptView
+            transcript={session.transcript}
+            speakerNames={speakerNames}
+            editable={session.status === 'done'}
+            onSave={handleTranscriptSave}
+          />
+        </div>
       ) : session.status === 'done' ? (
         <p className="text-slate-500 dark:text-slate-400">書き起こしを読み込み中...</p>
       ) : (
