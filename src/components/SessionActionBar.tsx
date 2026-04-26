@@ -15,6 +15,7 @@ import type {
 import { DEPTH_LABELS, PATTERN_LABELS, DEPTHS_BY_MODE, PATTERNS_BY_MODE } from '@/lib/types';
 import type { ShareRecord } from '@/lib/db';
 import { CrossAnalysisView } from './CrossAnalysisView';
+import { DELIMITER, TRAILING_DELIMITER, splitTokens } from '@/lib/maskedTermsInput';
 
 type ActivePanel = 'regenerate' | 'share' | 'history' | 'crossanalysis' | null;
 
@@ -59,6 +60,7 @@ export function SessionActionBar({
   const [sharing, setSharing] = useState(false);
   const [shareCreated, setShareCreated] = useState<string | null>(null);
   const shareInputRef = useRef<HTMLInputElement>(null);
+  const isComposingRef = useRef(false);
 
   // ── 履歴パネル ──
   const [shares, setShares] = useState<ShareRecord[]>([]);
@@ -183,16 +185,45 @@ export function SessionActionBar({
   };
 
   // ── 共有 ──
+  const commitTokens = (tokens: string[]) => {
+    if (tokens.length === 0) return;
+    setMaskedTerms((prev) => {
+      const next = [...prev];
+      for (const t of tokens) {
+        if (!next.includes(t)) next.push(t);
+      }
+      return next;
+    });
+    setSuggestedTerms((prev) => prev.filter((t) => !tokens.includes(t)));
+  };
+
   const addTerm = (term?: string) => {
-    const value = (term ?? termInput).trim();
-    if (value && !maskedTerms.includes(value)) {
-      setMaskedTerms((prev) => [...prev, value]);
-      setSuggestedTerms((prev) => prev.filter((t) => t !== value));
-    }
+    const raw = term ?? termInput;
+    const tokens = splitTokens(raw);
+    commitTokens(tokens);
     if (!term) {
       setTermInput('');
       shareInputRef.current?.focus();
     }
+  };
+
+  // 入力中に区切り文字が現れた瞬間に確定（IME 合成中はスキップ）
+  const handleShareInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (!isComposingRef.current && DELIMITER.test(value)) {
+      const tokens = splitTokens(value);
+      const endsWithDelim = TRAILING_DELIMITER.test(value);
+      if (endsWithDelim) {
+        commitTokens(tokens);
+        setTermInput('');
+      } else {
+        const lastToken = tokens.pop() ?? '';
+        commitTokens(tokens);
+        setTermInput(lastToken);
+      }
+      return;
+    }
+    setTermInput(value);
   };
 
   const removeTerm = (term: string) =>
@@ -561,13 +592,19 @@ export function SessionActionBar({
                     <p className="mb-1 text-xs font-medium text-slate-700 dark:text-slate-300">匿名化するキーワード</p>
                     <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
                       入力した語句をサマリーから言い換えて共有します。守秘義務や個人情報の保護に。
+                      カンマ・読点・句点・空白で自動分割されます。「金額情報」「掛け率などの条件」のようなカテゴリ的な指定もできます。
                     </p>
                     <div className="flex gap-2">
                       <input
                         ref={shareInputRef} type="text" value={termInput}
-                        onChange={(e) => setTermInput(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTerm(); } }}
-                        placeholder="例：山田様、株式会社〇〇"
+                        onChange={handleShareInputChange}
+                        onCompositionStart={() => { isComposingRef.current = true; }}
+                        onCompositionEnd={(e) => {
+                          isComposingRef.current = false;
+                          handleShareInputChange({ target: { value: (e.target as HTMLInputElement).value } } as React.ChangeEvent<HTMLInputElement>);
+                        }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && !isComposingRef.current) { e.preventDefault(); addTerm(); } }}
+                        placeholder="例：山田様、株式会社〇〇 田中商店"
                         className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-slate-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:placeholder-slate-500"
                       />
                       <button
