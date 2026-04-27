@@ -22,23 +22,25 @@ function MochanAvatar({ size = 36 }: { size?: number }) {
   );
 }
 
-// ── クライアント疑似アバター（名前から決定的に色生成・幾何模様） ──
-const CLIENT_PALETTES: ReadonlyArray<readonly [string, string, string]> = [
-  ['#fb923c', '#f59e0b', '#ec4899'], // orange→pink
-  ['#22d3ee', '#3b82f6', '#8b5cf6'], // cyan→violet
-  ['#10b981', '#14b8a6', '#0ea5e9'], // emerald→sky
-  ['#a855f7', '#ec4899', '#f43f5e'], // purple→rose
-  ['#84cc16', '#22c55e', '#06b6d4'], // lime→cyan
-  ['#f43f5e', '#fb7185', '#fb923c'], // rose→orange
-  ['#6366f1', '#8b5cf6', '#d946ef'], // indigo→fuchsia
+// ── クライアント疑似アバター（人物シルエット・名前ハッシュで背景色決定） ──
+const CLIENT_PALETTES: ReadonlyArray<readonly [string, string]> = [
+  ['#3b82f6', '#1d4ed8'], // blue
+  ['#10b981', '#047857'], // emerald
+  ['#f59e0b', '#b45309'], // amber
+  ['#ec4899', '#be185d'], // pink
+  ['#8b5cf6', '#6d28d9'], // violet
+  ['#0ea5e9', '#0369a1'], // sky
+  ['#14b8a6', '#0f766e'], // teal
+  ['#f43f5e', '#be123c'], // rose
+  ['#6366f1', '#4338ca'], // indigo
+  ['#84cc16', '#4d7c0f'], // lime
 ];
 
 function ClientAvatar({ name, size = 36 }: { name: string; size?: number }) {
   const reactId = useId();
   const safeName = name || 'Client';
   const hash = [...safeName].reduce((a, c) => a + c.charCodeAt(0), 0);
-  const [c1, c2, c3] = CLIENT_PALETTES[hash % CLIENT_PALETTES.length];
-  // 同じ要約内で複数回出ても安定するよう、名前ハッシュ + React useId
+  const [c1, c2] = CLIENT_PALETTES[hash % CLIENT_PALETTES.length];
   const gradId = `client-grad-${hash}-${reactId.replace(/:/g, '')}`;
 
   return (
@@ -51,15 +53,16 @@ function ClientAvatar({ name, size = 36 }: { name: string; size?: number }) {
       aria-label={`${safeName}のアイコン`}
     >
       <defs>
-        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={c1} />
-          <stop offset="100%" stopColor={c3} />
+          <stop offset="100%" stopColor={c2} />
         </linearGradient>
       </defs>
       <rect width="40" height="40" rx="20" fill={`url(#${gradId})`} />
-      <circle cx="13" cy="14" r="9" fill={c2} opacity="0.55" />
-      <circle cx="28" cy="26" r="11" fill={c1} opacity="0.45" />
-      <circle cx="22" cy="20" r="5" fill="white" opacity="0.25" />
+      {/* 頭 */}
+      <circle cx="20" cy="16" r="6" fill="white" />
+      {/* 肩〜胴のシルエット */}
+      <path d="M 8 36 Q 8 24 20 24 Q 32 24 32 36 Z" fill="white" />
     </svg>
   );
 }
