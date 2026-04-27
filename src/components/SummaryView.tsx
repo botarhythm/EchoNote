@@ -1,9 +1,107 @@
-import type { SessionSummary, SpeakerNames, SessionMoment } from '@/lib/types';
+import { useId } from 'react';
+import type { SessionSummary, SpeakerNames, SessionMoment, KeyQuote } from '@/lib/types';
 import { getSummaryMode } from '@/lib/types';
 
 interface SummaryViewProps {
   summary: SessionSummary;
   speakerNames?: SpeakerNames;
+}
+
+// ── もっちゃんアイコン ──
+function MochanAvatar({ size = 36 }: { size?: number }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/avatars/mocchan.jpg"
+      alt="もっちゃんのアイコン"
+      width={size}
+      height={size}
+      className="shrink-0 rounded-full object-cover ring-2 ring-white shadow-sm dark:ring-slate-700"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
+// ── クライアント疑似アバター（名前から決定的に色生成・幾何模様） ──
+const CLIENT_PALETTES: ReadonlyArray<readonly [string, string, string]> = [
+  ['#fb923c', '#f59e0b', '#ec4899'], // orange→pink
+  ['#22d3ee', '#3b82f6', '#8b5cf6'], // cyan→violet
+  ['#10b981', '#14b8a6', '#0ea5e9'], // emerald→sky
+  ['#a855f7', '#ec4899', '#f43f5e'], // purple→rose
+  ['#84cc16', '#22c55e', '#06b6d4'], // lime→cyan
+  ['#f43f5e', '#fb7185', '#fb923c'], // rose→orange
+  ['#6366f1', '#8b5cf6', '#d946ef'], // indigo→fuchsia
+];
+
+function ClientAvatar({ name, size = 36 }: { name: string; size?: number }) {
+  const reactId = useId();
+  const safeName = name || 'Client';
+  const hash = [...safeName].reduce((a, c) => a + c.charCodeAt(0), 0);
+  const [c1, c2, c3] = CLIENT_PALETTES[hash % CLIENT_PALETTES.length];
+  // 同じ要約内で複数回出ても安定するよう、名前ハッシュ + React useId
+  const gradId = `client-grad-${hash}-${reactId.replace(/:/g, '')}`;
+
+  return (
+    <svg
+      viewBox="0 0 40 40"
+      width={size}
+      height={size}
+      className="shrink-0 rounded-full ring-2 ring-white shadow-sm dark:ring-slate-700"
+      style={{ width: size, height: size }}
+      aria-label={`${safeName}のアイコン`}
+    >
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor={c1} />
+          <stop offset="100%" stopColor={c3} />
+        </linearGradient>
+      </defs>
+      <rect width="40" height="40" rx="20" fill={`url(#${gradId})`} />
+      <circle cx="13" cy="14" r="9" fill={c2} opacity="0.55" />
+      <circle cx="28" cy="26" r="11" fill={c1} opacity="0.45" />
+      <circle cx="22" cy="20" r="5" fill="white" opacity="0.25" />
+    </svg>
+  );
+}
+
+// ── SMS風チャット吹き出し ──
+function ChatBubble({
+  quote,
+  isMine,
+  speakerName,
+}: {
+  quote: KeyQuote;
+  isMine: boolean;
+  speakerName: string;
+}) {
+  return (
+    <li className={`flex gap-2.5 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
+      {isMine ? <MochanAvatar /> : <ClientAvatar name={speakerName} />}
+      <div className={`flex max-w-[78%] flex-col gap-1 ${isMine ? 'items-end' : 'items-start'}`}>
+        <span className="px-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+          {speakerName}
+        </span>
+        <div
+          className={
+            isMine
+              ? 'rounded-2xl rounded-br-sm bg-gradient-to-br from-sky-500 to-blue-600 px-4 py-2.5 text-[14.5px] leading-[1.7] text-white shadow-sm'
+              : 'rounded-2xl rounded-bl-sm border border-slate-200 bg-white px-4 py-2.5 text-[14.5px] leading-[1.7] text-slate-800 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
+          }
+        >
+          {quote.text}
+        </div>
+        {quote.context && (
+          <p
+            className={`max-w-[95%] px-1 text-[11px] italic leading-relaxed text-slate-500 dark:text-slate-400 ${
+              isMine ? 'text-right' : 'text-left'
+            }`}
+          >
+            {quote.context}
+          </p>
+        )}
+      </div>
+    </li>
+  );
 }
 
 const MOMENT_TYPE_LABELS: Record<SessionMoment['type'], { label: string; color: string }> = {
@@ -223,34 +321,21 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
           </section>
         )}
 
-        {/* VIII. 印象的な発言 */}
+        {/* VIII. 印象的なやりとり（SMS風） */}
         {summary.keyQuotes.length > 0 && (
           <section>
-            <SectionHeading number={isBotarhythm ? 'VIII' : 'V'} title="印象的な発言" accent="navy" />
-            <div className="space-y-4">
-              {summary.keyQuotes.map((quote, i) => (
-                <blockquote
-                  key={i}
-                  className="
-                    relative rounded-r-lg border-l-[3px] border-[#0f3460] bg-slate-50/70 py-3.5 pl-5 pr-4
-                    dark:border-sky-500 dark:bg-slate-800/40
-                  "
-                >
-                  <span
-                    aria-hidden
-                    className="absolute -top-1 left-3 select-none font-serif text-3xl leading-none text-slate-300 dark:text-slate-600"
-                  >
-                    “
-                  </span>
-                  <p className="font-serif text-[15.5px] leading-[1.9] text-slate-700 dark:text-slate-200">
-                    {quote.text}
-                  </p>
-                  <footer className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                    — <span className="font-medium text-slate-600 dark:text-slate-300">{speakerLabel(quote.speaker)}</span>
-                    {quote.context && <span className="ml-1.5">· {quote.context}</span>}
-                  </footer>
-                </blockquote>
-              ))}
+            <SectionHeading number={isBotarhythm ? 'VIII' : 'V'} title="印象的なやりとり" accent="navy" />
+            <div className="rounded-2xl bg-slate-50/70 px-3 py-5 ring-1 ring-slate-100 dark:bg-slate-800/30 dark:ring-slate-700/60 sm:px-5 sm:py-6">
+              <ul className="space-y-4">
+                {summary.keyQuotes.map((quote, i) => (
+                  <ChatBubble
+                    key={i}
+                    quote={quote}
+                    isMine={quote.speaker === 'A'}
+                    speakerName={speakerLabel(quote.speaker)}
+                  />
+                ))}
+              </ul>
             </div>
           </section>
         )}
