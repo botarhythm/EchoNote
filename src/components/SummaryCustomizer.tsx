@@ -37,9 +37,29 @@ export function SummaryCustomizer({
   // モード（最上位の切り替え）
   const [mode, setMode] = useState<SummaryMode>(currentMode ?? 'normal');
 
-  // 話者設定
-  const [speakerA, setSpeakerA] = useState('もっちゃん');
+  // ブランド情報（モード切り替えUIや話者デフォルト名のために使用）
+  const [brand, setBrand] = useState<{
+    enabled: boolean;
+    name?: string;
+    shortName?: string;
+    hostName?: string;
+    modeLabel?: string;
+  }>({ enabled: false });
+  useEffect(() => {
+    fetch('/api/brand')
+      .then((r) => r.json())
+      .then((d) => setBrand(d))
+      .catch(() => {});
+  }, []);
+
+  // 話者設定（ブランドのホスト名がデフォルト、未設定なら空）
+  const [speakerA, setSpeakerA] = useState('');
   const [speakerB, setSpeakerB] = useState('');
+  // ブランド情報が読み込まれたらデフォルトホスト名を反映
+  useEffect(() => {
+    if (brand.hostName && !speakerA) setSpeakerA(brand.hostName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brand.hostName]);
 
   // 再生成オプション（モード切替時に自動整合）
   const [depth, setDepth] = useState<SummaryDepth>('standard');
@@ -73,7 +93,7 @@ export function SummaryCustomizer({
     fetch(`/api/clients/${encodeURIComponent(clientName)}/settings`)
       .then((r) => r.json())
       .then((data: { settings: ClientSettings }) => {
-        setSpeakerA(data.settings.speakerA || 'もっちゃん');
+        setSpeakerA(data.settings.speakerA || brand.hostName || '');
         setSpeakerB(data.settings.speakerB || clientName);
         setClientNotes(data.settings.notes || '');
       })
@@ -172,41 +192,51 @@ export function SummaryCustomizer({
           ) : (
             <div className="space-y-6 px-4 py-5">
 
-              {/* ── モード選択（セグメントコントロール） ── */}
-              <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  サマリーモード
-                </p>
-                <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-900/40">
-                  <button
-                    onClick={() => setMode('normal')}
-                    className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                      !isBotarhythm
-                        ? 'bg-white text-slate-900 shadow dark:bg-slate-700 dark:text-slate-100'
-                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-                    }`}
-                  >
-                    <span className="block">ノーマル</span>
-                    <span className="block text-[11px] font-normal opacity-70">汎用議事録</span>
-                  </button>
-                  <button
-                    onClick={() => setMode('botarhythm')}
-                    className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                      isBotarhythm
-                        ? 'bg-amber-500 text-white shadow'
-                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-                    }`}
-                  >
-                    <span className="block">Botarhythm</span>
-                    <span className="block text-[11px] font-normal opacity-80">コーチング深層分析</span>
-                  </button>
+              {/* ── モード選択（セグメントコントロール） — ブランドモードはenvで有効化されたときのみ表示 ── */}
+              {brand.enabled ? (
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    サマリーモード
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-900/40">
+                    <button
+                      onClick={() => setMode('normal')}
+                      className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                        !isBotarhythm
+                          ? 'bg-white text-slate-900 shadow dark:bg-slate-700 dark:text-slate-100'
+                          : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      <span className="block">ノーマル</span>
+                      <span className="block text-[11px] font-normal opacity-70">汎用議事録</span>
+                    </button>
+                    <button
+                      onClick={() => setMode('botarhythm')}
+                      className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                        isBotarhythm
+                          ? 'bg-amber-500 text-white shadow'
+                          : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      <span className="block">{brand.modeLabel || brand.name || 'ブランド'}</span>
+                      <span className="block text-[11px] font-normal opacity-80">深層分析</span>
+                    </button>
+                  </div>
+                  <p className="mt-1.5 text-xs text-slate-400">
+                    {isBotarhythm
+                      ? 'コーチング・心理・ビジネス戦略の3視点で深掘り。転換点や深層テーマを抽出'
+                      : '一般的な会議・打合せ向け。議事録として必要十分な情報を整理'}
+                  </p>
                 </div>
-                <p className="mt-1.5 text-xs text-slate-400">
-                  {isBotarhythm
-                    ? 'コーチング・心理・ビジネス戦略の3視点で深掘り。転換点や深層テーマを抽出'
-                    : '一般的な会議・打合せ向け。議事録として必要十分な情報を整理'}
+              ) : (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  汎用議事録モードで再生成します。ブランド固有の深層分析モードは、
+                  <code className="mx-1 rounded bg-slate-100 px-1 py-0.5 text-[11px] dark:bg-slate-700">
+                    BRAND_MODE_ENABLED=true
+                  </code>
+                  などの環境変数を設定すると有効化されます（詳細は docs/setup.md）。
                 </p>
-              </div>
+              )}
 
               {/* ── 話者設定（Botarhythmモードのみ表示） ── */}
               {isBotarhythm && (

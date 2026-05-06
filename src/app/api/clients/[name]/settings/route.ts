@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClientSettings, upsertClientSettings } from '@/lib/db';
 import type { ClientSettings } from '@/lib/types';
+import { getBrandConfig } from '@/lib/branding';
 
 export async function GET(
   _req: NextRequest,
@@ -20,10 +21,11 @@ export async function PUT(
   const clientName = decodeURIComponent(name);
   const body = (await req.json()) as Partial<ClientSettings>;
 
+  const brand = getBrandConfig();
   await upsertClientSettings({
     clientName,
     notes: body.notes ?? '',
-    speakerA: body.speakerA ?? 'もっちゃん',
+    speakerA: body.speakerA ?? brand?.hostName ?? '',
     speakerB: body.speakerB ?? '',
   });
 

@@ -18,7 +18,7 @@ const notoSerif = Noto_Serif_JP({
 
 export const metadata: Metadata = {
   title: 'EchoNote - Session Archive',
-  description: 'Botarhythm Studio セッション議事録自動化',
+  description: 'セッション録音の文字起こしとAI要約',
 };
 
 export default function RootLayout({

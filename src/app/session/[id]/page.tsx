@@ -157,7 +157,7 @@ export default function SessionDetailPage() {
   };
 
   const speakerNames: SpeakerNames = {
-    A: clientSettings?.speakerA || 'もっちゃん',
+    A: clientSettings?.speakerA || '',
     B: clientSettings?.speakerB || session?.meta.clientName || '',
   };
 

@@ -14,12 +14,20 @@ interface ClientSettingsPanelProps {
 
 export function ClientSettingsPanel({ clientName, onClose, initialTab = 'settings' }: ClientSettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<PanelTab>(initialTab);
-  const [speakerA, setSpeakerA] = useState('もっちゃん');
+  const [speakerA, setSpeakerA] = useState('');
   const [speakerB, setSpeakerB] = useState('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [defaultHostName, setDefaultHostName] = useState('');
+
+  useEffect(() => {
+    fetch('/api/brand')
+      .then((r) => r.json())
+      .then((d: { hostName?: string }) => setDefaultHostName(d.hostName || ''))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!clientName) return;
@@ -27,13 +35,13 @@ export function ClientSettingsPanel({ clientName, onClose, initialTab = 'setting
     fetch(`/api/clients/${encodeURIComponent(clientName)}/settings`)
       .then((r) => r.json())
       .then((data: { settings: ClientSettings }) => {
-        setSpeakerA(data.settings.speakerA || 'もっちゃん');
+        setSpeakerA(data.settings.speakerA || defaultHostName);
         setSpeakerB(data.settings.speakerB || clientName);
         setNotes(data.settings.notes || '');
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [clientName]);
+  }, [clientName, defaultHostName]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -105,7 +113,7 @@ export function ClientSettingsPanel({ clientName, onClose, initialTab = 'setting
                     <input
                       type="text" value={speakerA}
                       onChange={(e) => setSpeakerA(e.target.value)}
-                      placeholder="もっちゃん"
+                      placeholder={defaultHostName || 'アドバイザー名'}
                       className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:border-blue-500 focus:outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                     />
                   </label>
