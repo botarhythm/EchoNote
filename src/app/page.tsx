@@ -9,6 +9,7 @@ import { ClientTabs } from '@/components/ClientTabs';
 import { ClientSettingsPanel } from '@/components/ClientSettingsPanel';
 import { CrossAnalysisView } from '@/components/CrossAnalysisView';
 import { JishushitsuCard } from '@/components/JishushitsuCard';
+import { BrandSettingsPanel } from '@/components/BrandSettingsPanel';
 import type { Session } from '@/lib/types';
 
 const REFRESH_INTERVAL = Number(process.env.NEXT_PUBLIC_POLL_INTERVAL_MS) || 10000;
@@ -20,6 +21,7 @@ export default function HomePage() {
   const [managingClient, setManagingClient] = useState<string | null>(null);
   const [adminMode, setAdminMode] = useState(false);
   const [showCrossAnalysis, setShowCrossAnalysis] = useState(false);
+  const [brandPanelOpen, setBrandPanelOpen] = useState(false);
 
   const fetchSessions = useCallback(async () => {
     try {
@@ -89,6 +91,15 @@ export default function HomePage() {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {/* ブランド設定（管理モード中のみ） */}
+          {adminMode && (
+            <button
+              onClick={() => setBrandPanelOpen(true)}
+              className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-50 active:scale-95 dark:border-amber-700 dark:bg-slate-800 dark:text-amber-400 dark:hover:bg-slate-700"
+            >
+              ブランド設定
+            </button>
+          )}
           {/* 管理モードトグル */}
           <button
             onClick={() => {
@@ -193,6 +204,11 @@ export default function HomePage() {
       )}
 
       <RailwayStatus />
+
+      <BrandSettingsPanel
+        open={brandPanelOpen}
+        onClose={() => setBrandPanelOpen(false)}
+      />
 
       <footer className="mt-6 text-center text-[11px] text-slate-300 dark:text-slate-700">
         EchoNote v{process.env.NEXT_PUBLIC_APP_VERSION || '1.0.0'}

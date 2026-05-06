@@ -21,7 +21,7 @@ export async function PUT(
   const clientName = decodeURIComponent(name);
   const body = (await req.json()) as Partial<ClientSettings>;
 
-  const brand = getBrandConfig();
+  const brand = await getBrandConfig();
   await upsertClientSettings({
     clientName,
     notes: body.notes ?? '',

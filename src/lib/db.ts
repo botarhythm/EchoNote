@@ -55,6 +55,26 @@ export async function initDb(): Promise<void> {
     )
   `);
 
+  // ブランド設定テーブル（インスタンスごとに1行のみ。id=1 で固定）
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS brand_settings (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      name TEXT NOT NULL DEFAULT '',
+      short_name TEXT NOT NULL DEFAULT '',
+      host_name TEXT NOT NULL DEFAULT '',
+      host_full_name TEXT NOT NULL DEFAULT '',
+      host_keywords TEXT NOT NULL DEFAULT '',
+      philosophy TEXT NOT NULL DEFAULT '',
+      approach TEXT NOT NULL DEFAULT '',
+      host_strength TEXT NOT NULL DEFAULT '',
+      session_flow TEXT NOT NULL DEFAULT '',
+      mode_label TEXT NOT NULL DEFAULT '',
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT brand_settings_singleton CHECK (id = 1)
+    )
+  `);
+
   // 起動時: 前回のサーバー再起動で中断されたセッションをリセット
   const stuckResult = await p.query(
     `UPDATE sessions
@@ -408,7 +428,7 @@ export async function getClientSettings(clientName: string): Promise<ClientSetti
   const p = getPool();
   const res = await p.query('SELECT * FROM client_settings WHERE client_name = $1', [clientName]);
   if (res.rows.length === 0) {
-    return { clientName, notes: '', speakerA: 'もっちゃん', speakerB: clientName };
+    return { clientName, notes: '', speakerA: '', speakerB: clientName };
   }
   const row = res.rows[0] as {
     client_name: string;
@@ -437,5 +457,102 @@ export async function upsertClientSettings(settings: Omit<ClientSettings, 'updat
        speaker_b_name = EXCLUDED.speaker_b_name,
        updated_at = NOW()`,
     [settings.clientName, settings.notes, settings.speakerA, settings.speakerB]
+  );
+}
+
+// ─── ブランド設定 ───────────────────────────────────────────────────────────
+
+export interface BrandSettingsRow {
+  enabled: boolean;
+  name: string;
+  shortName: string;
+  hostName: string;
+  hostFullName: string;
+  hostKeywords: string;  // カンマ区切り
+  philosophy: string;
+  approach: string;
+  hostStrength: string;
+  sessionFlow: string;
+  modeLabel: string;
+  updatedAt?: string;
+}
+
+interface BrandSettingsDbRow {
+  enabled: boolean;
+  name: string;
+  short_name: string;
+  host_name: string;
+  host_full_name: string;
+  host_keywords: string;
+  philosophy: string;
+  approach: string;
+  host_strength: string;
+  session_flow: string;
+  mode_label: string;
+  updated_at: string;
+}
+
+export async function getBrandSettings(): Promise<BrandSettingsRow | null> {
+  try {
+    const p = getPool();
+    const res = await p.query('SELECT * FROM brand_settings WHERE id = 1');
+    if (res.rows.length === 0) return null;
+    const row = res.rows[0] as BrandSettingsDbRow;
+    return {
+      enabled: row.enabled,
+      name: row.name,
+      shortName: row.short_name,
+      hostName: row.host_name,
+      hostFullName: row.host_full_name,
+      hostKeywords: row.host_keywords,
+      philosophy: row.philosophy,
+      approach: row.approach,
+      hostStrength: row.host_strength,
+      sessionFlow: row.session_flow,
+      modeLabel: row.mode_label,
+      updatedAt: row.updated_at,
+    };
+  } catch (err) {
+    console.error('[EchoNote] getBrandSettings failed:', err);
+    return null;
+  }
+}
+
+export async function upsertBrandSettings(
+  settings: Omit<BrandSettingsRow, 'updatedAt'>
+): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `INSERT INTO brand_settings (
+       id, enabled, name, short_name, host_name, host_full_name, host_keywords,
+       philosophy, approach, host_strength, session_flow, mode_label, updated_at
+     )
+     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+     ON CONFLICT (id) DO UPDATE SET
+       enabled = EXCLUDED.enabled,
+       name = EXCLUDED.name,
+       short_name = EXCLUDED.short_name,
+       host_name = EXCLUDED.host_name,
+       host_full_name = EXCLUDED.host_full_name,
+       host_keywords = EXCLUDED.host_keywords,
+       philosophy = EXCLUDED.philosophy,
+       approach = EXCLUDED.approach,
+       host_strength = EXCLUDED.host_strength,
+       session_flow = EXCLUDED.session_flow,
+       mode_label = EXCLUDED.mode_label,
+       updated_at = NOW()`,
+    [
+      settings.enabled,
+      settings.name,
+      settings.shortName,
+      settings.hostName,
+      settings.hostFullName,
+      settings.hostKeywords,
+      settings.philosophy,
+      settings.approach,
+      settings.hostStrength,
+      settings.sessionFlow,
+      settings.modeLabel,
+    ]
   );
 }

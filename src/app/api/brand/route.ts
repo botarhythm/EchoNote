@@ -11,5 +11,5 @@ export const dynamic = 'force-dynamic';
  * レスポンス: { enabled: boolean, name?, shortName?, hostName?, modeLabel? }
  */
 export async function GET() {
-  return NextResponse.json(getPublicBrandInfo());
+  return NextResponse.json(await getPublicBrandInfo());
 }

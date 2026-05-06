@@ -1,25 +1,18 @@
 /**
  * EchoNote のブランドモード設定。
  *
- * デフォルトでは EchoNote は「ノーマル議事録モード」のみが有効で、
- * PlaudNote 風の汎用的な要約を生成する。
+ * デフォルトでは EchoNote は「汎用議事録モード（PlaudNote風）」のみが有効で、
+ * 各 EchoNote インスタンスはブランドモードを opt-in で有効化できる。
  *
- * 各 EchoNote インスタンスは環境変数を通じて、自分のブランド／提供者向けの
- * 「ブランドモード」（深層分析モード）を opt-in で有効化できる。
+ * 設定の保存先は以下の優先順位:
+ *   1. DB（brand_settings テーブル・1行のみ）
+ *   2. 環境変数（DB に行が無い場合の初期値・互換用フォールバック）
  *
- * 例（Botarhythm Studio が有効化する場合）:
- *   NEXT_PUBLIC_BRAND_MODE_ENABLED=true
- *   NEXT_PUBLIC_BRAND_LABEL=Botarhythmセッション
- *   BRAND_NAME=Botarhythm Studio
- *   BRAND_SHORT_NAME=ボタリズム
- *   BRAND_HOST_NAME=もっちゃん
- *   BRAND_HOST_FULL_NAME=元沢信昭
- *   BRAND_HOST_KEYWORDS=もっちゃん,元沢
- *   BRAND_PHILOSOPHY=「依存させない」——クライアントが自走できる状態が最終目標
- *   BRAND_APPROACH=丸投げでなく伴走型。クライアントの現場感を尊重しながら変革を促す
- *   BRAND_HOST_STRENGTH=当事者目線でデジタル変革の痛みに共感し、実践的な処方箋を示す
- *   BRAND_SESSION_FLOW=課題の明確化 → 認知の拡張 → 行動への落とし込み
+ * 通常運用では管理画面（管理モード → ブランド設定パネル）から編集する。
+ * env はあくまでブートストラップ用。設定の変更ごとに再デプロイが要らない。
  */
+
+import { getBrandSettings } from './db';
 
 export interface BrandConfig {
   /** ブランド名（例: "Botarhythm Studio"） */
@@ -44,11 +37,8 @@ export interface BrandConfig {
   modeLabel: string;
 }
 
-/**
- * 環境変数からブランド設定を読み込む。
- * BRAND_MODE_ENABLED が "true" でない、または必須項目（NAME / HOST_NAME）が未設定なら null。
- */
-export function getBrandConfig(): BrandConfig | null {
+/** env から bootstrap 用の初期値を読み込む（DB に行が無い場合のフォールバック） */
+function getEnvFallbackConfig(): BrandConfig | null {
   const enabled =
     process.env.NEXT_PUBLIC_BRAND_MODE_ENABLED === 'true' ||
     process.env.BRAND_MODE_ENABLED === 'true';
@@ -81,8 +71,38 @@ export function getBrandConfig(): BrandConfig | null {
   };
 }
 
-export function isBrandModeEnabled(): boolean {
-  return getBrandConfig() !== null;
+/**
+ * ブランド設定を取得する。DB → env の優先順位。
+ * DB の行が存在し enabled=true なら DB の値、無いか未保存なら env、それも無ければ null。
+ */
+export async function getBrandConfig(): Promise<BrandConfig | null> {
+  // 1. DB を優先
+  const dbRow = await getBrandSettings();
+  if (dbRow && dbRow.enabled && dbRow.name && dbRow.hostName) {
+    const hostKeywords = (dbRow.hostKeywords || dbRow.hostName)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return {
+      name: dbRow.name,
+      shortName: dbRow.shortName || dbRow.name,
+      hostName: dbRow.hostName,
+      hostFullName: dbRow.hostFullName || dbRow.hostName,
+      hostKeywords,
+      philosophy: dbRow.philosophy,
+      approach: dbRow.approach,
+      hostStrength: dbRow.hostStrength,
+      sessionFlow: dbRow.sessionFlow,
+      modeLabel: dbRow.modeLabel || `${dbRow.name}セッション`,
+    };
+  }
+
+  // 2. env フォールバック（DB未保存の初回起動時など）
+  return getEnvFallbackConfig();
+}
+
+export async function isBrandModeEnabled(): Promise<boolean> {
+  return (await getBrandConfig()) !== null;
 }
 
 /**
@@ -97,8 +117,8 @@ export interface PublicBrandInfo {
   modeLabel?: string;
 }
 
-export function getPublicBrandInfo(): PublicBrandInfo {
-  const config = getBrandConfig();
+export async function getPublicBrandInfo(): Promise<PublicBrandInfo> {
+  const config = await getBrandConfig();
   if (!config) return { enabled: false };
   return {
     enabled: true,
