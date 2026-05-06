@@ -8,6 +8,7 @@ import { RailwayStatus } from '@/components/RailwayStatus';
 import { ClientTabs } from '@/components/ClientTabs';
 import { ClientSettingsPanel } from '@/components/ClientSettingsPanel';
 import { CrossAnalysisView } from '@/components/CrossAnalysisView';
+import { JishushitsuCard } from '@/components/JishushitsuCard';
 import type { Session } from '@/lib/types';
 
 const REFRESH_INTERVAL = Number(process.env.NEXT_PUBLIC_POLL_INTERVAL_MS) || 10000;
@@ -112,6 +113,9 @@ export default function HomePage() {
           <ThemeToggle />
         </div>
       </header>
+
+      {/* 自習室ランチャー */}
+      <JishushitsuCard />
 
       {/* クライアントタブ */}
       <ClientTabs

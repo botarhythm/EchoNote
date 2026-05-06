@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
 import type { drive_v3 } from 'googleapis';
+import { Readable } from 'stream';
 
 export interface DriveFile {
   id: string;
@@ -39,6 +40,40 @@ export async function listAudioFiles(): Promise<DriveFile[]> {
     mimeType: f.mimeType!,
     modifiedTime: f.modifiedTime!,
   }));
+}
+
+/**
+ * 監視フォルダ（DRIVE_FOLDER_ID）に音声ファイルをアップロードする。
+ * 既存の Drive ポーリングが拾って文字起こし → サマリー生成のパイプラインに乗る。
+ *
+ * @returns 作成された Drive ファイルの ID
+ */
+export async function uploadAudioFile(
+  filename: string,
+  mimeType: string,
+  buffer: Buffer
+): Promise<string> {
+  const folderId = process.env.DRIVE_FOLDER_ID;
+  if (!folderId) throw new Error('DRIVE_FOLDER_ID が設定されていません');
+
+  const drive = getDrive();
+  const stream = Readable.from(buffer);
+
+  const res = await drive.files.create({
+    requestBody: {
+      name: filename,
+      parents: [folderId],
+    },
+    media: {
+      mimeType,
+      body: stream,
+    },
+    fields: 'id',
+    supportsAllDrives: true,
+  });
+
+  if (!res.data.id) throw new Error('Drive アップロードに失敗しました（id 取得不可）');
+  return res.data.id;
 }
 
 export async function downloadFile(fileId: string): Promise<Buffer> {
