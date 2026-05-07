@@ -29,7 +29,7 @@ export async function listAudioFiles(): Promise<DriveFile[]> {
 
   const drive = getDrive();
   const res = await drive.files.list({
-    q: `'${folderId}' in parents and trashed = false and (mimeType contains 'audio/' or name contains '.m4a' or name contains '.mp3' or name contains '.wav')`,
+    q: `'${folderId}' in parents and trashed = false and (mimeType contains 'audio/' or mimeType contains 'video/webm' or name contains '.m4a' or name contains '.mp3' or name contains '.wav' or name contains '.webm' or name contains '.ogg' or name contains '.mp4')`,
     fields: 'files(id, name, mimeType, modifiedTime)',
     orderBy: 'modifiedTime desc',
   });
