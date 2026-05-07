@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { uploadAudioFile } from '@/lib/drive';
+import { uploadAudioFile, getOrCreateChunksFolderId } from '@/lib/drive';
+import { insertChunk } from '@/lib/db';
+import { mergeChunkGroup } from '@/lib/chunk-merger';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -59,19 +61,82 @@ export async function POST(request: NextRequest) {
   const sessionDate = sanitizeDate(form.get('sessionDate')?.toString() || '');
   const source = sanitize(form.get('source')?.toString() || 'external');
 
-  // 3. ファイル名整形（YYYYMMDD_クライアント名[_memo].ext）
+  // チャンク分割アップロードのメタデータ
+  const sessionGroupId = (form.get('sessionGroupId')?.toString() || '').trim();
+  const chunkIndexRaw = form.get('chunkIndex')?.toString() || '';
+  const isFinalRaw = form.get('isFinal')?.toString() || '';
+
+  // 3. ファイル名整形
   const ext = pickExtension(file.name, file.type) || 'm4a';
   const today = sessionDate || todayYYYYMMDD();
   const baseName = clientName || source || 'recording';
   const memoPart = memo ? `_${memo}` : '';
-  const filename = `${today}_${baseName}${memoPart}.${ext}`;
+  const origin = request.headers.get('origin') || new URL(request.url).origin;
 
-  // 4. Driveにアップロード
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    const fileId = await uploadAudioFile(filename, file.type || `audio/${ext}`, buffer);
+    const mimeType = file.type || `audio/${ext}`;
 
-    const origin = request.headers.get('origin') || new URL(request.url).origin;
+    // ── チャンクモード ──
+    if (sessionGroupId) {
+      const chunkIndex = Number.parseInt(chunkIndexRaw, 10);
+      if (!Number.isFinite(chunkIndex) || chunkIndex < 0) {
+        return NextResponse.json(
+          { error: 'sessionGroupId 指定時は chunkIndex（0以上の整数）が必要です' },
+          { status: 400 }
+        );
+      }
+      const isFinal = isFinalRaw === 'true' || isFinalRaw === '1';
+
+      // チャンク用フォルダにアップロード
+      const chunksFolderId = await getOrCreateChunksFolderId();
+      const chunkFilename = `${sessionGroupId}_${String(chunkIndex).padStart(4, '0')}.${ext}`;
+      const driveFileId = await uploadAudioFile(chunkFilename, mimeType, buffer, chunksFolderId);
+
+      // DB に登録
+      await insertChunk({
+        groupId: sessionGroupId,
+        chunkIndex,
+        driveFileId,
+        filename: chunkFilename,
+        mimeType,
+        isFinal,
+        clientName: clientName || null,
+        sessionDate: today,
+        memo: memo || null,
+        source: source || null,
+      });
+
+      // isFinal=true なら、少し待ってからマージ実行（並行アップロードの取りこぼし防止）
+      if (isFinal) {
+        // バックグラウンドで実行（fire-and-forget）
+        const mergedBaseName = `${today}_${baseName}${memoPart}`;
+        (async () => {
+          try {
+            // 30秒待つ：他のチャンクが in-flight の場合に備える
+            await new Promise((r) => setTimeout(r, 30 * 1000));
+            await mergeChunkGroup({ groupId: sessionGroupId, baseName: mergedBaseName });
+          } catch (err) {
+            console.error(`[ingest] マージ失敗 ${sessionGroupId}:`, err);
+          }
+        })();
+      }
+
+      return NextResponse.json({
+        ok: true,
+        chunkIndex,
+        sessionGroupId,
+        isFinal,
+        message: isFinal
+          ? 'チャンクを受け取りました。全チャンクを結合してまもなく要約生成を開始します。'
+          : 'チャンクを受け取りました。続きのチャンクを送信してください。',
+      });
+    }
+
+    // ── 従来モード（単一ファイル） ──
+    const filename = `${today}_${baseName}${memoPart}.${ext}`;
+    const fileId = await uploadAudioFile(filename, mimeType, buffer);
+
     return NextResponse.json({
       ok: true,
       sessionId: fileId,

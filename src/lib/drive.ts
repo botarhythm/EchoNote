@@ -46,14 +46,17 @@ export async function listAudioFiles(): Promise<DriveFile[]> {
  * 監視フォルダ（DRIVE_FOLDER_ID）に音声ファイルをアップロードする。
  * 既存の Drive ポーリングが拾って文字起こし → サマリー生成のパイプラインに乗る。
  *
+ * @param targetFolderId 任意。未指定なら DRIVE_FOLDER_ID を使う。
+ *                       チャンク受信時はサブフォルダ ID を渡す。
  * @returns 作成された Drive ファイルの ID
  */
 export async function uploadAudioFile(
   filename: string,
   mimeType: string,
-  buffer: Buffer
+  buffer: Buffer,
+  targetFolderId?: string
 ): Promise<string> {
-  const folderId = process.env.DRIVE_FOLDER_ID;
+  const folderId = targetFolderId ?? process.env.DRIVE_FOLDER_ID;
   if (!folderId) throw new Error('DRIVE_FOLDER_ID が設定されていません');
 
   const drive = getDrive();
@@ -74,6 +77,46 @@ export async function uploadAudioFile(
 
   if (!res.data.id) throw new Error('Drive アップロードに失敗しました（id 取得不可）');
   return res.data.id;
+}
+
+/**
+ * DRIVE_FOLDER_ID 配下のチャンク用サブフォルダ（_chunks）を取得・作成する。
+ * 既存ポーリングは direct children のみを見るので、サブフォルダ内のチャンクは検知されない。
+ */
+let cachedChunksFolderId: string | null = null;
+export async function getOrCreateChunksFolderId(): Promise<string> {
+  if (cachedChunksFolderId) return cachedChunksFolderId;
+  const parentId = process.env.DRIVE_FOLDER_ID;
+  if (!parentId) throw new Error('DRIVE_FOLDER_ID が設定されていません');
+  const drive = getDrive();
+  // 既存のサブフォルダを検索
+  const res = await drive.files.list({
+    q: `'${parentId}' in parents and name = '_chunks' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+    fields: 'files(id)',
+    pageSize: 1,
+  });
+  const existing = res.data.files?.[0];
+  if (existing?.id) {
+    cachedChunksFolderId = existing.id;
+    return existing.id;
+  }
+  // 無ければ作成
+  const created = await drive.files.create({
+    requestBody: {
+      name: '_chunks',
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentId],
+    },
+    fields: 'id',
+  });
+  if (!created.data.id) throw new Error('チャンクフォルダ作成失敗');
+  cachedChunksFolderId = created.data.id;
+  return created.data.id;
+}
+
+export async function deleteFile(fileId: string): Promise<void> {
+  const drive = getDrive();
+  await drive.files.delete({ fileId, supportsAllDrives: true });
 }
 
 export async function downloadFile(fileId: string): Promise<Buffer> {

@@ -55,6 +55,26 @@ export async function initDb(): Promise<void> {
     )
   `);
 
+  // 録音チャンクテーブル（外部アプリから分割アップロードされた録音の中間管理）
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS recording_chunks (
+      group_id TEXT NOT NULL,
+      chunk_index INTEGER NOT NULL,
+      drive_file_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      is_final BOOLEAN NOT NULL DEFAULT FALSE,
+      client_name TEXT,
+      session_date TEXT,
+      memo TEXT,
+      source TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      merged_at TIMESTAMPTZ,
+      PRIMARY KEY (group_id, chunk_index)
+    )
+  `);
+  await p.query(`CREATE INDEX IF NOT EXISTS recording_chunks_group_idx ON recording_chunks(group_id)`);
+
   // ブランド設定テーブル（インスタンスごとに1行のみ。id=1 で固定）
   await p.query(`
     CREATE TABLE IF NOT EXISTS brand_settings (
@@ -555,4 +575,123 @@ export async function upsertBrandSettings(
       settings.modeLabel,
     ]
   );
+}
+
+// ─── 録音チャンク（分割アップロード） ───────────────────────────────────────
+
+export interface RecordingChunkRow {
+  groupId: string;
+  chunkIndex: number;
+  driveFileId: string;
+  filename: string;
+  mimeType: string;
+  isFinal: boolean;
+  clientName: string | null;
+  sessionDate: string | null;
+  memo: string | null;
+  source: string | null;
+  createdAt: string;
+  mergedAt: string | null;
+}
+
+interface RecordingChunkDbRow {
+  group_id: string;
+  chunk_index: number;
+  drive_file_id: string;
+  filename: string;
+  mime_type: string;
+  is_final: boolean;
+  client_name: string | null;
+  session_date: string | null;
+  memo: string | null;
+  source: string | null;
+  created_at: string;
+  merged_at: string | null;
+}
+
+function rowToChunk(row: RecordingChunkDbRow): RecordingChunkRow {
+  return {
+    groupId: row.group_id,
+    chunkIndex: row.chunk_index,
+    driveFileId: row.drive_file_id,
+    filename: row.filename,
+    mimeType: row.mime_type,
+    isFinal: row.is_final,
+    clientName: row.client_name,
+    sessionDate: row.session_date,
+    memo: row.memo,
+    source: row.source,
+    createdAt: row.created_at,
+    mergedAt: row.merged_at,
+  };
+}
+
+export async function insertChunk(
+  chunk: Omit<RecordingChunkRow, 'createdAt' | 'mergedAt'>
+): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `INSERT INTO recording_chunks (
+       group_id, chunk_index, drive_file_id, filename, mime_type, is_final,
+       client_name, session_date, memo, source
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     ON CONFLICT (group_id, chunk_index) DO UPDATE SET
+       drive_file_id = EXCLUDED.drive_file_id,
+       filename = EXCLUDED.filename,
+       mime_type = EXCLUDED.mime_type,
+       is_final = EXCLUDED.is_final,
+       client_name = EXCLUDED.client_name,
+       session_date = EXCLUDED.session_date,
+       memo = EXCLUDED.memo,
+       source = EXCLUDED.source`,
+    [
+      chunk.groupId,
+      chunk.chunkIndex,
+      chunk.driveFileId,
+      chunk.filename,
+      chunk.mimeType,
+      chunk.isFinal,
+      chunk.clientName,
+      chunk.sessionDate,
+      chunk.memo,
+      chunk.source,
+    ]
+  );
+}
+
+/** 指定 groupId の全チャンクを chunkIndex 昇順で返す（未マージのみ） */
+export async function getChunksByGroup(groupId: string): Promise<RecordingChunkRow[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT * FROM recording_chunks
+     WHERE group_id = $1 AND merged_at IS NULL
+     ORDER BY chunk_index ASC`,
+    [groupId]
+  );
+  return (res.rows as RecordingChunkDbRow[]).map(rowToChunk);
+}
+
+/** 指定 groupId の全チャンクをマージ済みとしてマーク */
+export async function markChunksMerged(groupId: string): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `UPDATE recording_chunks SET merged_at = NOW() WHERE group_id = $1 AND merged_at IS NULL`,
+    [groupId]
+  );
+}
+
+/**
+ * 古い未マージのチャンクグループを取得（タイムアウト過ぎてもマージされていない孤児）。
+ * 例: createdAt が thresholdSec 秒以上前のチャンクのみを含むグループを返す。
+ */
+export async function getStaleChunkGroups(thresholdSec: number): Promise<string[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT DISTINCT group_id FROM recording_chunks
+     WHERE merged_at IS NULL
+       AND created_at < NOW() - ($1 || ' seconds')::interval`,
+    [String(thresholdSec)]
+  );
+  return (res.rows as { group_id: string }[]).map((r) => r.group_id);
 }
