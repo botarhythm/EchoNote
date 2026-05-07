@@ -8,35 +8,15 @@ const PARTICIPANT_URL = process.env.NEXT_PUBLIC_DIGIHARA_BASE_URL || '';
 /**
  * Botarhythm Studio セッションルームのランチャーカード。
  *
- * - 録音セッションを開始: サーバー側 API から鍵付きホストURLを取得して新タブで開く（自動録音される）
+ * - 録音セッションを開始: /api/jishushitsu/start への通常リンク（302リダイレクトで digihara のホストURLへ）
+ *   ブラウザのポップアップブロックに引っかからないよう、aタグの target=_blank で開く
  * - 参加者を招待: メール/Discord/Slack 経由で招待メッセージを送信できるモーダル
  * - 参加者URLをコピー: クリップボードへ
  */
 export function JishushitsuCard() {
-  const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
-
-  const handleStartSession = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/jishushitsu/instructor-url');
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !data.url) {
-        throw new Error(data.error || '講師URLを取得できませんでした');
-      }
-      const win = window.open(data.url, '_blank', 'noopener,noreferrer');
-      if (!win) {
-        setError('ポップアップがブロックされました。ブラウザ設定をご確認ください。');
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const handleCopyUrl = async () => {
     if (!PARTICIPANT_URL) {
@@ -73,18 +53,19 @@ export function JishushitsuCard() {
         </p>
 
         <div className="grid gap-2 sm:grid-cols-3">
-          {/* 主アクション: 録音セッション開始 */}
-          <button
-            onClick={handleStartSession}
-            disabled={busy}
-            className="group inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50 active:scale-95 sm:col-span-3 sm:py-3 sm:text-base"
+          {/* 主アクション: 録音セッション開始（aタグでサーバーリダイレクト） */}
+          <a
+            href="/api/jishushitsu/start"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-700 active:scale-95 sm:col-span-3 sm:py-3 sm:text-base"
           >
             <span className="relative flex h-2.5 w-2.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/70" />
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-white" />
             </span>
-            <span>{busy ? '開いています…' : '録音セッションを開始（ホスト）'}</span>
-          </button>
+            <span>録音セッションを開始（ホスト）</span>
+          </a>
 
           {/* 副アクション: 参加者を招待 */}
           <button
