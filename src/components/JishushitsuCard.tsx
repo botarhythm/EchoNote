@@ -6,9 +6,9 @@ import { InviteModal } from './InviteModal';
 const PARTICIPANT_URL = process.env.NEXT_PUBLIC_DIGIHARA_BASE_URL || '';
 
 /**
- * 自習室（digihara_jishushitsu）ランチャーカード。
+ * Botarhythm Studio セッションルームのランチャーカード。
  *
- * - 録音セッションを開始: サーバー側 API から鍵付き講師URLを取得して新タブで開く（自動録音される）
+ * - 録音セッションを開始: サーバー側 API から鍵付きホストURLを取得して新タブで開く（自動録音される）
  * - 参加者を招待: メール/Discord/Slack 経由で招待メッセージを送信できるモーダル
  * - 参加者URLをコピー: クリップボードへ
  */
@@ -58,9 +58,9 @@ export function JishushitsuCard() {
     <>
       <div className="mb-6 rounded-xl border border-stone-200 bg-gradient-to-br from-amber-50 to-stone-50 p-4 shadow-sm dark:border-stone-700 dark:from-stone-800/60 dark:to-stone-900/60 sm:p-5">
         <div className="mb-2 flex items-center gap-2">
-          <span className="text-lg" aria-hidden>🎓</span>
+          <span className="text-lg" aria-hidden>🎙️</span>
           <h2 className="text-sm font-semibold text-stone-800 dark:text-stone-200 sm:text-base">
-            自習室 — 録音 & AI要約
+            セッションルーム — 録音 & AI要約
           </h2>
           <span className="ml-auto rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400">
             ライブ
@@ -68,7 +68,7 @@ export function JishushitsuCard() {
         </div>
 
         <p className="mb-4 text-xs text-stone-600 dark:text-stone-400 sm:text-sm">
-          講師として入室すると <strong className="text-red-600 dark:text-red-400">自動で録音</strong> が始まります。
+          ホストとして入室すると <strong className="text-red-600 dark:text-red-400">自動で録音</strong> が始まります。
           終了時に文字起こしとAI要約が自動で生成されます。
         </p>
 
@@ -83,7 +83,7 @@ export function JishushitsuCard() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/70" />
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-white" />
             </span>
-            <span>{busy ? '開いています…' : '録音セッションを開始（講師）'}</span>
+            <span>{busy ? '開いています…' : '録音セッションを開始（ホスト）'}</span>
           </button>
 
           {/* 副アクション: 参加者を招待 */}

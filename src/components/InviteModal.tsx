@@ -14,7 +14,7 @@ interface ChannelStatus {
 }
 
 /**
- * 自習室の参加者を招待するためのモーダル。
+ * セッションの参加者を招待するためのモーダル。
  * メッセージを編集して、メール/Discord/Slack のいずれかへ送信できる。
  */
 export function InviteModal({ open, participantUrl, onClose }: InviteModalProps) {
@@ -56,7 +56,7 @@ export function InviteModal({ open, participantUrl, onClose }: InviteModalProps)
   };
 
   const sendViaMail = () => {
-    const subject = encodeURIComponent('【自習室】参加のご案内');
+    const subject = encodeURIComponent('【Botarhythm Studio】セッション参加のご案内');
     const body = encodeURIComponent(message);
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   };
@@ -191,7 +191,7 @@ function buildDefaultMessage(participantUrl: string): string {
   const yyyy = today.getFullYear();
   const mm = String(today.getMonth() + 1).padStart(2, '0');
   const dd = String(today.getDate()).padStart(2, '0');
-  return `【自習室のお知らせ】
+  return `【Botarhythm Studio セッションのご案内】
 
 日時: ${yyyy}-${mm}-${dd}
 参加URL: ${participantUrl}

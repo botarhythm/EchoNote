@@ -113,7 +113,7 @@ docker run --name echonote-pg -e POSTGRES_PASSWORD=secret -p 5432:5432 -d postgr
 
 ## ステップ 6. （任意）digihara_jishushitsu との連携
 
-自習室の録音を自動で取り込みたい場合の設定。
+セッションルームの録音を自動で取り込みたい場合の設定。
 
 ### 6-1. EchoNote 側
 
@@ -138,20 +138,20 @@ ECHONOTE_URL_TSUKAKOSHI=https://your-echonote.up.railway.app
 ECHONOTE_TOKEN_TSUKAKOSHI=<上のtoken>
 ```
 
-これで自習室セッション終了時に、自分の EchoNote へ自動で録音が送られて要約されます。
+これでセッションルームセッション終了時に、自分の EchoNote へ自動で録音が送られて要約されます。
 
 ---
 
-## ステップ 7. （任意）EchoNote から自習室を起動
+## ステップ 7. （任意）EchoNote からセッションルームを起動
 
-EchoNote のトップページに「自習室を開く」カードを表示する場合:
+EchoNote のトップページに「セッションルームを開く」カードを表示する場合:
 
 | 変数 | 値 |
 |---|---|
 | `NEXT_PUBLIC_DIGIHARA_BASE_URL` | `https://digihara-jishushitsu.vercel.app` |
 | `DIGIHARA_INSTRUCTOR_KEY` | digihara 運用者から提供される自分の講師キー |
 
-設定すれば、トップページから 1 クリックで講師として自習室を開けます。
+設定すれば、トップページから 1 クリックで講師としてセッションルームを開けます。
 
 ---
 

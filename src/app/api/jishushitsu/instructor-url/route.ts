@@ -4,8 +4,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * 講師用の自習室URLを発行する。
- * 講師キーをクライアントバンドルに含めないよう、サーバー側で組み立ててから返す。
+ * セッションホスト用URLを発行する。
+ * ホストキーをクライアントバンドルに含めないよう、サーバー側で組み立ててから返す。
  *
  * レスポンス: { url: "https://.../?role=instructor&key=..." }
  */

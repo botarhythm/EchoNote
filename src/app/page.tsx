@@ -125,7 +125,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* 自習室ランチャー */}
+      {/* セッションランチャー */}
       <JishushitsuCard />
 
       {/* クライアントタブ */}

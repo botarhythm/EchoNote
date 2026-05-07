@@ -11,7 +11,7 @@ interface InviteBody {
 }
 
 /**
- * 自習室の招待メッセージを Discord/Slack の Webhook 経由で送信する。
+ * セッションの招待メッセージを Discord/Slack の Webhook 経由で送信する。
  *
  * 設定:
  *   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/xxx/yyy
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
 
   const payload =
     method === 'discord'
-      ? { content: message, username: 'EchoNote 自習室' }
+      ? { content: message, username: 'Botarhythm Studio' }
       : { text: message };
 
   try {

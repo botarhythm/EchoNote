@@ -8,8 +8,8 @@
 - セッション一覧／詳細閲覧、印象的な発言・課題・宿題・ネクストアクションを構造化
 - クライアントごとのタブとクロス分析（複数セッションの俯瞰）
 - 共有リンク発行（匿名化マスキング対応）
-- [デジタル原っぱ大学 自習室（digihara_jishushitsu）](https://github.com/akiratsukakoshi/digihara_jishushitsu) からの録音受け口（`/api/ingest`）
-- 自習室ランチャー（自分の EchoNote から digihara を講師として起動）
+- セッションルーム（[botarhythm/digihara_jishushitsu](https://github.com/botarhythm/digihara_jishushitsu) ベース）からの録音受け口（`/api/ingest`）
+- セッションランチャー（自分の EchoNote からセッションルームをホストとして起動）
 
 ## 技術スタック
 
@@ -63,8 +63,8 @@ npm run dev
 | `POLL_INTERVAL_MS` | サーバー側ポーリング間隔（ms） | 任意（既定 60000） |
 | `NEXT_PUBLIC_POLL_INTERVAL_MS` | クライアント側自動更新間隔（ms） | 任意（既定 10000） |
 | `ECHONOTE_INGEST_TOKEN` | 外部からの音声受け口（digihara 等）に使う共有秘密鍵 | digihara 連携時のみ |
-| `NEXT_PUBLIC_DIGIHARA_BASE_URL` | 自習室の参加者 URL ベース | 自習室ランチャー使用時 |
-| `DIGIHARA_INSTRUCTOR_KEY` | 自習室の講師キー（自分の） | 自習室ランチャー使用時 |
+| `NEXT_PUBLIC_DIGIHARA_BASE_URL` | セッションルームの参加者 URL ベース | セッションランチャー使用時 |
+| `DIGIHARA_INSTRUCTOR_KEY` | セッションルームのホストキー（自分の） | セッションランチャー使用時 |
 
 ## API
 
@@ -79,11 +79,11 @@ npm run dev
 
 レスポンス: `{ ok: true, sessionId, filename, viewUrl }`
 
-[デジタル原っぱ大学 自習室](https://github.com/akiratsukakoshi/digihara_jishushitsu) はこのエンドポイントへ自動送信します。
+セッションルーム（[botarhythm/digihara_jishushitsu](https://github.com/botarhythm/digihara_jishushitsu)）はこのエンドポイントへ自動送信します。
 
 ### `/api/jishushitsu/instructor-url`
 
-自習室の講師 URL を返します。講師キーをクライアントバンドルに含めないためのサーバー側組み立て。
+セッションルームのホスト URL を返します。ホストキーをクライアントバンドルに含めないためのサーバー側組み立て。
 
 ## ドキュメント
 

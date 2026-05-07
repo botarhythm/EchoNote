@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * 外部アプリ（digihara_jishushitsu等）が録音音声をEchoNoteに送り込むためのエンドポイント。
+ * 外部アプリ（セッションルーム等）が録音音声をEchoNoteに送り込むためのエンドポイント。
  *
  * 認証:
  *   Authorization: Bearer <ECHONOTE_INGEST_TOKEN>
