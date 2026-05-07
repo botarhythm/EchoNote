@@ -76,6 +76,23 @@ function inputExtFromMime(mimeType: string): string {
   return mimeType.split('/')[1] || 'm4a';
 }
 
+/**
+ * Gemini に送る際の mimeType を正規化する。
+ *
+ * 重要：webm / ogg は音声専用コンテナとしても動画コンテナとしても使われる。
+ * Google Drive が webm に video/webm を付けることがあるが、digihara で
+ * MediaRecorder が出力する webm は音声のみ。
+ * もし video/webm のまま Gemini に渡すと、動画として扱われて
+ * トークン消費が約8倍（音声 ~32t/秒 vs 動画 ~258t/秒）になり高額化する。
+ *
+ * MediaRecorder からの録音は常に音声のみなので、webm/ogg は audio/* に固定する。
+ */
+function normalizeMimeTypeForGemini(mimeType: string): string {
+  if (mimeType.includes('webm')) return 'audio/webm';
+  if (mimeType.includes('ogg')) return 'audio/ogg';
+  return mimeType;
+}
+
 /** 音声バッファを10分チャンクに分割し、各チャンクの正確な開始秒を返す */
 async function splitAudio(
   audioBuffer: Buffer,
@@ -412,11 +429,17 @@ function buildPrevContext(utterances: Utterance[], count = 3): string {
 
 export async function transcribeAudio(
   audioBuffer: Buffer,
-  mimeType: string,
+  mimeTypeRaw: string,
   onProgress?: ProgressCallback,
   sessionId?: string  // 中間保存用（省略可）
 ): Promise<Utterance[]> {
   const ai = getClient();
+  // Gemini に音声として認識させるため、webm/ogg は audio/* に正規化
+  // （動画扱いされるとトークン消費が約8倍になる）
+  const mimeType = normalizeMimeTypeForGemini(mimeTypeRaw);
+  if (mimeType !== mimeTypeRaw) {
+    console.log(`[EchoNote] mimeType 正規化: ${mimeTypeRaw} → ${mimeType}（音声として処理）`);
+  }
   const sizeMB = (audioBuffer.length / 1024 / 1024).toFixed(1);
   const tmpId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
