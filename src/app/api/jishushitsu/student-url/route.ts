@@ -9,24 +9,27 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * 講師がセッションを開始するためのリダイレクトエンドポイント。
+ * 受講生用ワンタイム URL を JSON で返す。
  *
- * Jishushitsu の `/api/invite-token` をサーバー間で叩いて instructor 用ワンタイム URL を発行し、
- * 302 でその URL に飛ばす。SERVICE_SECRET はクライアントに露出しない。
- *
- * フロントから <a href="/api/jishushitsu/start?rec=audio" target="_blank"> 形式で呼ぶ。
+ * - サーバー側で Jishushitsu の `/api/invite-token` (student) を発行
+ * - レスポンス: { url, expiresAt, initialRec }
  *
  * クエリ:
  *   ?rec=audio|screen|both|off  入室直後に自動 ON にしたい録音/録画
+ *                                受講生は通常 off (録音/録画は講師側操作)
  */
 export async function GET(request: NextRequest) {
   const rec = parseInitialRec(request.nextUrl.searchParams.get('rec'));
   try {
     const invite = await issueJishushitsuInvite({
-      role: 'instructor',
+      role: 'student',
       initialRec: rec,
     });
-    return NextResponse.redirect(invite.url, 302);
+    return NextResponse.json({
+      url: invite.url,
+      expiresAt: invite.expiresAt,
+      initialRec: invite.initialRec,
+    });
   } catch (err) {
     const status = err instanceof JishushitsuConfigError ? 503 : 502;
     const message = err instanceof Error ? err.message : String(err);

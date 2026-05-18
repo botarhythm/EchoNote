@@ -1,38 +1,38 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { InviteModal } from './InviteModal';
 
-const PARTICIPANT_URL = process.env.NEXT_PUBLIC_DIGIHARA_BASE_URL || '';
+type InitialRec = 'off' | 'audio' | 'screen' | 'both';
+
+const BASE_URL = process.env.NEXT_PUBLIC_DIGIHARA_BASE_URL || '';
+
+function computeInitialRec(audio: boolean, screen: boolean): InitialRec {
+  if (audio && screen) return 'both';
+  if (audio) return 'audio';
+  if (screen) return 'screen';
+  return 'off';
+}
 
 /**
  * Botarhythm Studio セッションルームのランチャーカード。
  *
- * - 録音セッションを開始: /api/jishushitsu/start への通常リンク（302リダイレクトで digihara のホストURLへ）
- *   ブラウザのポップアップブロックに引っかからないよう、aタグの target=_blank で開く
- * - 参加者を招待: メール/Discord/Slack 経由で招待メッセージを送信できるモーダル
- * - 参加者URLをコピー: クリップボードへ
+ * - 録音セッションを開始: /api/jishushitsu/start?rec=... へ 302、Jishushitsu のワンタイム URL に飛ばす
+ * - 録音 / 録画 を別個に ON/OFF してから開始できる
+ * - 参加者を招待: モーダル経由でメール/Discord/Slack 送信、ワンタイム URL を都度発行
  */
 export function JishushitsuCard() {
-  const [copied, setCopied] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [recAudio, setRecAudio] = useState(true);
+  const [recScreen, setRecScreen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
 
-  const handleCopyUrl = async () => {
-    if (!PARTICIPANT_URL) {
-      setError('NEXT_PUBLIC_DIGIHARA_BASE_URL が未設定です');
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(PARTICIPANT_URL);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setError('クリップボードへのコピーに失敗しました');
-    }
-  };
+  const initialRec = useMemo(
+    () => computeInitialRec(recAudio, recScreen),
+    [recAudio, recScreen]
+  );
+  const startHref = `/api/jishushitsu/start?rec=${initialRec}`;
 
-  if (!PARTICIPANT_URL) return null;
+  if (!BASE_URL) return null;
 
   return (
     <>
@@ -47,70 +47,66 @@ export function JishushitsuCard() {
           </span>
         </div>
 
-        <p className="mb-4 text-xs text-stone-600 dark:text-stone-400 sm:text-sm">
-          ホストとして入室すると <strong className="text-red-600 dark:text-red-400">自動で録音</strong> が始まります。
-          終了時に文字起こしとAI要約が自動で生成されます。
+        <p className="mb-3 text-xs text-stone-600 dark:text-stone-400 sm:text-sm">
+          ワンタイムリンクで入室します。下のチェックで入室直後に開始する記録方法を選べます。
         </p>
 
-        <div className="grid gap-2 sm:grid-cols-3">
-          {/* 主アクション: 録音セッション開始（aタグでサーバーリダイレクト） */}
+        {/* 録音 / 録画チェック */}
+        <div className="mb-4 flex flex-wrap gap-x-4 gap-y-2 rounded-lg border border-stone-200 bg-white/70 px-3 py-2 text-sm dark:border-stone-700 dark:bg-stone-900/40">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-stone-700 dark:text-stone-200">
+            <input
+              type="checkbox"
+              checked={recAudio}
+              onChange={(e) => setRecAudio(e.target.checked)}
+              className="h-4 w-4 rounded border-stone-300 text-red-600 focus:ring-red-400 dark:border-stone-600"
+            />
+            <span>🎙️ 録音 (AI要約)</span>
+          </label>
+          <label className="inline-flex cursor-pointer items-center gap-2 text-stone-700 dark:text-stone-200">
+            <input
+              type="checkbox"
+              checked={recScreen}
+              onChange={(e) => setRecScreen(e.target.checked)}
+              className="h-4 w-4 rounded border-stone-300 text-amber-600 focus:ring-amber-400 dark:border-stone-600"
+            />
+            <span>🎥 録画 (画面)</span>
+          </label>
+          <span className="ml-auto self-center text-[11px] text-stone-500 dark:text-stone-400">
+            入室後にいつでも ON/OFF 可能
+          </span>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2">
           <a
-            href="/api/jishushitsu/start"
+            href={startHref}
             target="_blank"
             rel="noopener noreferrer"
-            className="group inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-700 active:scale-95 sm:col-span-3 sm:py-3 sm:text-base"
+            className="group inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-700 active:scale-95 sm:col-span-2 sm:py-3 sm:text-base"
           >
             <span className="relative flex h-2.5 w-2.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/70" />
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-white" />
             </span>
-            <span>録音セッションを開始（ホスト）</span>
+            <span>セッションを開始（ホスト）</span>
           </a>
 
-          {/* 副アクション: 参加者を招待 */}
           <button
             onClick={() => setInviteOpen(true)}
-            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50 active:scale-95 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50 active:scale-95 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700 sm:col-span-2"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
-            参加者を招待
+            参加者を招待 (ワンタイムリンク発行)
           </button>
-
-          {/* 副アクション: URLコピー */}
-          <button
-            onClick={handleCopyUrl}
-            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50 active:scale-95 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-              <rect x="9" y="9" width="13" height="13" rx="2" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-            </svg>
-            {copied ? 'コピーしました' : 'URLをコピー'}
-          </button>
-
-          {/* 参加者URL（小さく表示） */}
-          <a
-            href={PARTICIPANT_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="col-span-3 truncate text-center text-[11px] text-stone-500 underline-offset-2 hover:underline dark:text-stone-400"
-          >
-            参加者: {PARTICIPANT_URL.replace(/^https?:\/\//, '')}
-          </a>
         </div>
 
-        {error && (
-          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
-        )}
+        <p className="mt-2 text-[11px] text-stone-500 dark:text-stone-400">
+          受講生向けのリンクは「参加者を招待」から発行できます。各リンクは 1 回限り (退出後は無効)。
+        </p>
       </div>
 
-      <InviteModal
-        open={inviteOpen}
-        participantUrl={PARTICIPANT_URL}
-        onClose={() => setInviteOpen(false)}
-      />
+      <InviteModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
     </>
   );
 }

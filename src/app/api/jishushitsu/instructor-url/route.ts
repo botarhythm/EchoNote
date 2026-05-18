@@ -1,37 +1,37 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import {
+  JishushitsuConfigError,
+  issueJishushitsuInvite,
+  parseInitialRec,
+} from '@/lib/jishushitsu-invite';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * セッションホスト用URLを発行する。
- * ホストキーをクライアントバンドルに含めないよう、サーバー側で組み立ててから返す。
+ * 講師用ワンタイム URL を JSON で返す。
  *
- * レスポンス: { url: "https://.../?role=instructor&key=..." }
+ * - サーバー側で Jishushitsu の `/api/invite-token` (instructor) を発行
+ * - レスポンス: { url, expiresAt, initialRec }
+ *
+ * クエリ:
+ *   ?rec=audio|screen|both|off  入室直後に自動 ON にしたい録音/録画
  */
-export async function GET() {
-  const baseUrl =
-    process.env.NEXT_PUBLIC_DIGIHARA_BASE_URL ||
-    process.env.DIGIHARA_BASE_URL ||
-    '';
-  const key = process.env.DIGIHARA_INSTRUCTOR_KEY || '';
-
-  if (!baseUrl) {
-    return NextResponse.json(
-      { error: 'NEXT_PUBLIC_DIGIHARA_BASE_URL が未設定です' },
-      { status: 503 }
-    );
+export async function GET(request: NextRequest) {
+  const rec = parseInitialRec(request.nextUrl.searchParams.get('rec'));
+  try {
+    const invite = await issueJishushitsuInvite({
+      role: 'instructor',
+      initialRec: rec,
+    });
+    return NextResponse.json({
+      url: invite.url,
+      expiresAt: invite.expiresAt,
+      initialRec: invite.initialRec,
+    });
+  } catch (err) {
+    const status = err instanceof JishushitsuConfigError ? 503 : 502;
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: message }, { status });
   }
-  if (!key) {
-    return NextResponse.json(
-      { error: 'DIGIHARA_INSTRUCTOR_KEY が未設定です' },
-      { status: 503 }
-    );
-  }
-
-  const url = new URL(baseUrl);
-  url.searchParams.set('role', 'instructor');
-  url.searchParams.set('key', key);
-
-  return NextResponse.json({ url: url.toString() });
 }

@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 
 interface InviteModalProps {
   open: boolean;
-  participantUrl: string;
   onClose: () => void;
 }
 
@@ -13,25 +12,65 @@ interface ChannelStatus {
   slack: boolean;
 }
 
+interface StudentUrlResponse {
+  url: string;
+  expiresAt: number;
+}
+
 /**
  * セッションの参加者を招待するためのモーダル。
- * メッセージを編集して、メール/Discord/Slack のいずれかへ送信できる。
+ *
+ * - 開く度に `/api/jishushitsu/student-url` でワンタイム URL を発行
+ * - メッセージを編集して、メール / Discord / Slack へ送信
+ * - 各リンクは 1 回限り (受講生が退出すると無効)
  */
-export function InviteModal({ open, participantUrl, onClose }: InviteModalProps) {
-  const [message, setMessage] = useState(() => buildDefaultMessage(participantUrl));
+export function InviteModal({ open, onClose }: InviteModalProps) {
+  const [participantUrl, setParticipantUrl] = useState<string>('');
+  const [urlError, setUrlError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string>('');
   const [status, setStatus] = useState<ChannelStatus>({ discord: false, slack: false });
   const [busy, setBusy] = useState<null | 'discord' | 'slack' | 'copy'>(null);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    setMessage(buildDefaultMessage(participantUrl));
     setFeedback(null);
+    setUrlError(null);
+    setParticipantUrl('');
+    setMessage('');
+
+    let cancelled = false;
     fetch('/api/jishushitsu/invite')
       .then((r) => r.json())
-      .then((d: ChannelStatus) => setStatus(d))
-      .catch(() => setStatus({ discord: false, slack: false }));
-  }, [open, participantUrl]);
+      .then((d: ChannelStatus) => {
+        if (!cancelled) setStatus(d);
+      })
+      .catch(() => {
+        if (!cancelled) setStatus({ discord: false, slack: false });
+      });
+
+    fetch('/api/jishushitsu/student-url')
+      .then(async (r) => {
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(d?.error || `URL 発行失敗 (${r.status})`);
+        }
+        return (await r.json()) as StudentUrlResponse;
+      })
+      .then((d) => {
+        if (cancelled) return;
+        setParticipantUrl(d.url);
+        setMessage(buildDefaultMessage(d.url));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setUrlError(err instanceof Error ? err.message : 'URL 発行に失敗しました');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -88,7 +127,7 @@ export function InviteModal({ open, participantUrl, onClose }: InviteModalProps)
               参加者を招待
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              メッセージを編集して、お好きな方法で送信できます
+              ワンタイムリンク (1 回限り・退出後は無効) を発行します
             </p>
           </div>
           <button
@@ -102,20 +141,35 @@ export function InviteModal({ open, participantUrl, onClose }: InviteModalProps)
           </button>
         </div>
 
-        <textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          rows={7}
-          className="w-full rounded-lg border border-slate-300 bg-white p-3 text-sm font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-        />
+        {urlError ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
+            {urlError}
+          </div>
+        ) : !participantUrl ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800/40">
+            ワンタイムリンクを発行中…
+          </div>
+        ) : (
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            rows={7}
+            className="w-full rounded-lg border border-slate-300 bg-white p-3 text-sm font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+          />
+        )}
 
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <ActionButton onClick={sendViaMail} icon="✉️" label="メール" />
+          <ActionButton
+            onClick={sendViaMail}
+            icon="✉️"
+            label="メール"
+            disabled={!participantUrl}
+          />
           <ActionButton
             onClick={() => sendVia('discord')}
             icon="💬"
             label="Discord"
-            disabled={!status.discord || busy !== null}
+            disabled={!participantUrl || !status.discord || busy !== null}
             busy={busy === 'discord'}
             disabledHint={!status.discord ? '未設定' : undefined}
           />
@@ -123,7 +177,7 @@ export function InviteModal({ open, participantUrl, onClose }: InviteModalProps)
             onClick={() => sendVia('slack')}
             icon="💼"
             label="Slack"
-            disabled={!status.slack || busy !== null}
+            disabled={!participantUrl || !status.slack || busy !== null}
             busy={busy === 'slack'}
             disabledHint={!status.slack ? '未設定' : undefined}
           />
@@ -132,7 +186,7 @@ export function InviteModal({ open, participantUrl, onClose }: InviteModalProps)
             icon="📋"
             label="コピー"
             busy={busy === 'copy'}
-            disabled={busy !== null}
+            disabled={!participantUrl || busy !== null}
           />
         </div>
 
@@ -194,8 +248,8 @@ function buildDefaultMessage(participantUrl: string): string {
   return `【Botarhythm Studio セッションのご案内】
 
 日時: ${yyyy}-${mm}-${dd}
-参加URL: ${participantUrl}
+参加URL (1 回限り・退出後は無効): ${participantUrl}
 
-お名前を入力してご参加ください。
+リンクを開いてお名前を入力するとご参加いただけます。
 ブラウザのマイク・カメラ権限を許可してください（推奨ブラウザ: Chrome 最新版）。`;
 }
