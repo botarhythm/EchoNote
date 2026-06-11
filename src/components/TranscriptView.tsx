@@ -8,6 +8,15 @@ interface TranscriptViewProps {
   speakerNames?: SpeakerNames;
   onSave?: (next: Utterance[]) => Promise<void> | void;
   editable?: boolean;
+  /** サマリーからのジャンプ先。nonce を変えるたびに再スクロールする */
+  scrollTarget?: { timestamp: string; nonce: number } | null;
+}
+
+function tsToSeconds(ts: string): number {
+  const parts = ts.split(':').map((p) => Number(p));
+  if (parts.length >= 3) return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+  if (parts.length === 2) return (parts[0] || 0) * 60 + (parts[1] || 0);
+  return parts[0] || 0;
 }
 
 interface EditDraft {
@@ -21,6 +30,7 @@ export function TranscriptView({
   speakerNames,
   onSave,
   editable = false,
+  scrollTarget = null,
 }: TranscriptViewProps) {
   const speakerLabel = (s: 'A' | 'B') =>
     speakerNames?.[s] ? speakerNames[s].slice(0, 4) : s;
@@ -29,7 +39,9 @@ export function TranscriptView({
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
+  const [highlightIndex, setHighlightIndex] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const rowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   // 編集開始時にtextareaへ自動フォーカス＆カーソルを末尾へ
   useEffect(() => {
@@ -39,6 +51,25 @@ export function TranscriptView({
       el.setSelectionRange(el.value.length, el.value.length);
     }
   }, [editingIndex]);
+
+  // サマリーからのタイムスタンプジャンプ: 指定時刻以前で最も近い発話へスクロール＆ハイライト
+  useEffect(() => {
+    if (!scrollTarget || transcript.length === 0) return;
+    const targetSec = tsToSeconds(scrollTarget.timestamp);
+    let bestIndex = 0;
+    for (let i = 0; i < transcript.length; i++) {
+      if (tsToSeconds(transcript[i].timestamp) <= targetSec) bestIndex = i;
+      else break;
+    }
+    setSearchQuery(''); // フィルタで対象行が消えないように解除
+    // フィルタ解除後の再レンダリングを待ってからスクロール
+    requestAnimationFrame(() => {
+      rowRefs.current.get(bestIndex)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    setHighlightIndex(bestIndex);
+    const timer = setTimeout(() => setHighlightIndex(null), 2500);
+    return () => clearTimeout(timer);
+  }, [scrollTarget, transcript]);
 
   const filteredEntries = transcript
     .map((u, originalIndex) => ({ utterance: u, originalIndex }))
@@ -137,12 +168,18 @@ export function TranscriptView({
               ? 'bg-blue-100 text-blue-600 dark:bg-blue-500/30 dark:text-blue-300'
               : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/30 dark:text-emerald-300';
 
+          const isHighlighted = highlightIndex === originalIndex;
+
           return (
             <div
               key={originalIndex}
+              ref={(el) => {
+                if (el) rowRefs.current.set(originalIndex, el);
+                else rowRefs.current.delete(originalIndex);
+              }}
               className={`group flex gap-3 rounded px-3 py-2 transition-colors ${speakerColor} ${
                 isSaving ? 'opacity-60' : ''
-              }`}
+              } ${isHighlighted ? 'ring-2 ring-sky-400 dark:ring-sky-500' : ''}`}
             >
               <div className="flex shrink-0 flex-col items-center gap-0.5">
                 {isEditing && draft ? (

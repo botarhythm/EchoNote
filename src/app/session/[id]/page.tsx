@@ -32,6 +32,16 @@ export default function SessionDetailPage() {
   const [editingMeta, setEditingMeta] = useState(false);
   const [metaDraft, setMetaDraft] = useState({ clientName: '', date: '' });
   const [diffPanelOpen, setDiffPanelOpen] = useState(false);
+  // サマリーのタイムスタンプから書き起こしの該当位置へジャンプ
+  const [transcriptScrollTarget, setTranscriptScrollTarget] = useState<{
+    timestamp: string;
+    nonce: number;
+  } | null>(null);
+
+  const jumpToTranscript = useCallback((timestamp: string) => {
+    setActiveTab('transcript');
+    setTranscriptScrollTarget({ timestamp, nonce: Date.now() });
+  }, []);
 
   const loadSession = useCallback(async () => {
     try {
@@ -342,7 +352,12 @@ export default function SessionDetailPage() {
       {/* ── コンテンツ ── */}
       {activeTab === 'summary' && session.summary ? (
         <div className="space-y-6">
-          <SummaryView summary={session.summary} speakerNames={speakerNames} />
+          <SummaryView
+            summary={session.summary}
+            speakerNames={speakerNames}
+            transcript={session.transcript}
+            onJumpToTranscript={jumpToTranscript}
+          />
           <SummaryVisualizations
             summary={session.summary}
             speakerALabel={speakerNames?.A}
@@ -383,6 +398,7 @@ export default function SessionDetailPage() {
             speakerNames={speakerNames}
             editable={session.status === 'done'}
             onSave={handleTranscriptSave}
+            scrollTarget={transcriptScrollTarget}
           />
         </div>
       ) : session.status === 'done' ? (

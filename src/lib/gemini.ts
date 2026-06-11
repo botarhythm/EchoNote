@@ -412,11 +412,6 @@ function secondsToTimestamp(totalSec: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-/** タイムスタンプにオフセット秒を加算して "HH:MM:SS" を返す */
-function addSecondsToTimestamp(ts: string, offsetSec: number): string {
-  return secondsToTimestamp(timestampStringToSeconds(ts) + offsetSec);
-}
-
 /** チャンク末尾の発話を次チャンクへのコンテキストとして整形 */
 function buildPrevContext(utterances: Utterance[], count = 3): string {
   return utterances
@@ -510,14 +505,14 @@ export async function transcribeAudio(
   const total = chunkPaths.length;
   await onProgress?.(`🔀 音声を ${total} チャンクに分割して並列処理します`);
 
-  // チャンクを順次処理（前チャンクのコンテキストが必要なため順序は維持、並列はAPI呼び出しで制御）
-  // pLimit でFiles APIアップロード+文字起こしを最大3並列
+  // チャンクを最大3並列で処理（pLimit でFiles APIアップロード+文字起こしを制御）
   const limit = pLimit(PARALLEL_LIMIT);
   const allUtterances: Utterance[][] = new Array(total);
 
-  // prevContext は順番に確定させる必要があるため、依存関係を持たせて処理
-  // ただしAPIレイテンシを考慮し、前チャンクのコンテキストが確定次第、次チャンクを投入
-  let prevContext: string | null = null;
+  // 前チャンク末尾の発話を次チャンクのコンテキストとして渡す（話者ラベルの一貫性向上）。
+  // 並列処理のため「直前チャンクがすでに完了している場合のみ」渡すベストエフォート方式。
+  // 完了していない場合は null（プロンプト側の話者前提だけで判別させる）。
+  // 注意: 以前は完了順に共有変数を上書きしていたため、別チャンクの文脈が誤って渡ることがあった。
   const pending: Promise<void>[] = [];
 
   for (let i = 0; i < total; i++) {
@@ -526,7 +521,8 @@ export async function transcribeAudio(
     // segment_list から得た正確な開始秒を使用（-c:a copy ではAACフレーム境界に揃うため
     // 名目600秒ピッチではなく実測値が必要）
     const offsetSec = offsetsSec[idx] ?? idx * CHUNK_DURATION_SEC;
-    const ctx = prevContext;
+    const prevUtterances: Utterance[] | undefined = idx > 0 ? allUtterances[idx - 1] : undefined;
+    const ctx = prevUtterances && prevUtterances.length > 0 ? buildPrevContext(prevUtterances) : null;
 
     await onProgress?.(`✍️ チャンク ${idx + 1}/${total} を文字起こし中...`);
 
@@ -550,12 +546,7 @@ export async function transcribeAudio(
       }
     });
 
-    pending.push(task.then((utterances) => {
-      // 次チャンクのコンテキストを更新（順次）
-      if (utterances && utterances.length > 0) {
-        prevContext = buildPrevContext(utterances);
-      }
-    }));
+    pending.push(task.then(() => {}));
 
     // PARALLEL_LIMIT 個溜まったら待機し、完了したバッチをDBに中間保存
     if (pending.length >= PARALLEL_LIMIT) {

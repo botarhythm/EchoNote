@@ -26,6 +26,21 @@ export interface Utterance {
 // サマリーのモード（ノーマル議事録 vs Botarhythmセッション分析）
 export type SummaryMode = 'normal' | 'botarhythm';
 
+// セッションの章立て（タイムスタンプ付き目次）
+export interface Chapter {
+  startTime: string;   // "00:00:00"
+  endTime: string;     // "00:12:30"
+  title: string;       // 章タイトル
+  summary: string;     // その章で何が話されたか（1〜2文）
+}
+
+// 数値・条件の抽出（金額・期日・KPIなど）
+export interface KeyNumber {
+  label: string;       // 例: "月額顧問料"
+  value: string;       // 例: "5万円"
+  context?: string;    // 例: "4月から開始で合意"
+}
+
 // Claude APIが返すサマリーのJSON構造
 export interface SessionSummary {
   mode?: SummaryMode;                    // 'normal'|'botarhythm'（未設定 = 後方互換で推測）
@@ -33,6 +48,11 @@ export interface SessionSummary {
   clientName: string;
   date: string;
   sessionType: string;
+  // ── エグゼクティブブリーフ（冒頭30秒で全体把握するためのTLDR） ──
+  executiveSummary?: string[];           // 2〜4行の要点（旧データには存在しない）
+  chapters?: Chapter[];                  // タイムスタンプ付き章立て
+  decisions?: string[];                  // このセッションで確定した決定事項のみ
+  keyNumbers?: KeyNumber[];              // 言及された重要な数値・金額・期日
   clientPains: string[];
   adviceGiven: string[];
   nextActions: NextAction[];
@@ -61,7 +81,9 @@ export function getSummaryMode(summary: SessionSummary): SummaryMode {
 
 export interface NextAction {
   task: string;
-  owner: 'もっちゃん' | 'クライアント' | '両者';
+  // 担当者名（AIが会話から推測した実名が入ることもあるため自由文字列。
+  // 旧データは 'もっちゃん' | 'クライアント' | '両者' のいずれか）
+  owner: string;
   deadline?: string;
 }
 
@@ -69,6 +91,7 @@ export interface KeyQuote {
   speaker: 'A' | 'B';
   text: string;
   context: string;
+  timestamp?: string;  // "00:12:34" — 書き起こしへのジャンプに使用（旧データにはない）
 }
 
 // セッション内の転換点（詳細・Deep モードで使用）

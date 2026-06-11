@@ -1,10 +1,20 @@
 import { useId } from 'react';
-import type { SessionSummary, SpeakerNames, SessionMoment, KeyQuote } from '@/lib/types';
+import type {
+  SessionSummary,
+  SpeakerNames,
+  SessionMoment,
+  KeyQuote,
+  Utterance,
+} from '@/lib/types';
 import { getSummaryMode } from '@/lib/types';
 
 interface SummaryViewProps {
   summary: SessionSummary;
   speakerNames?: SpeakerNames;
+  /** 書き起こし（あればセッション統計の算出に使用） */
+  transcript?: Utterance[];
+  /** 引用やチャプターのタイムスタンプクリック時に書き起こしへジャンプ */
+  onJumpToTranscript?: (timestamp: string) => void;
 }
 
 // ── もっちゃんアイコン ──
@@ -67,22 +77,68 @@ function ClientAvatar({ name, size = 36 }: { name: string; size?: number }) {
   );
 }
 
+// ── タイムスタンプユーティリティ ──
+function timestampToSeconds(ts: string): number {
+  const parts = ts.split(':').map((p) => Number(p));
+  if (parts.length >= 3) return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+  if (parts.length === 2) return (parts[0] || 0) * 60 + (parts[1] || 0);
+  return parts[0] || 0;
+}
+
+/** "HH:MM:SS" → 表示用 "H:MM" / "MM:SS"（時間が0なら分:秒に短縮しない。章表示は分単位が読みやすい） */
+function shortTime(ts: string): string {
+  const sec = timestampToSeconds(ts);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function formatDuration(totalSec: number): string {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.round((totalSec % 3600) / 60);
+  if (h > 0) return `${h}時間${m}分`;
+  return `${m}分`;
+}
+
+// ── ローマ数字（セクション番号の欠番を防ぐため動的に採番する） ──
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV'];
+
 // ── SMS風チャット吹き出し ──
 function ChatBubble({
   quote,
   isMine,
   speakerName,
+  onJump,
 }: {
   quote: KeyQuote;
   isMine: boolean;
   speakerName: string;
+  onJump?: (timestamp: string) => void;
 }) {
   return (
     <li className={`flex gap-2.5 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
       {isMine ? <MochanAvatar /> : <ClientAvatar name={speakerName} />}
       <div className={`flex max-w-[78%] flex-col gap-1 ${isMine ? 'items-end' : 'items-start'}`}>
-        <span className="px-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+        <span className="flex items-baseline gap-1.5 px-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
           {speakerName}
+          {quote.timestamp && (
+            onJump ? (
+              <button
+                type="button"
+                onClick={() => onJump(quote.timestamp!)}
+                title="書き起こしのこの位置へジャンプ"
+                className="font-mono text-[10px] text-sky-600 underline decoration-dotted underline-offset-2 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
+              >
+                {shortTime(quote.timestamp)}
+              </button>
+            ) : (
+              <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
+                {shortTime(quote.timestamp)}
+              </span>
+            )
+          )}
         </span>
         <div
           className={
@@ -123,7 +179,7 @@ function SectionHeading({
 }: {
   number: string;
   title: string;
-  accent?: 'navy' | 'crimson' | 'indigo' | 'teal' | 'amber' | 'violet' | 'slate';
+  accent?: 'navy' | 'crimson' | 'indigo' | 'teal' | 'amber' | 'violet' | 'slate' | 'emerald';
 }) {
   const accentMap: Record<string, { bar: string; num: string }> = {
     navy:    { bar: 'bg-[#0f3460] dark:bg-sky-400',       num: 'text-[#0f3460] dark:text-sky-400' },
@@ -133,6 +189,7 @@ function SectionHeading({
     amber:   { bar: 'bg-amber-600 dark:bg-amber-400',     num: 'text-amber-700 dark:text-amber-400' },
     violet:  { bar: 'bg-violet-600 dark:bg-violet-400',   num: 'text-violet-600 dark:text-violet-400' },
     slate:   { bar: 'bg-slate-500 dark:bg-slate-400',     num: 'text-slate-600 dark:text-slate-400' },
+    emerald: { bar: 'bg-emerald-600 dark:bg-emerald-400', num: 'text-emerald-700 dark:text-emerald-400' },
   };
   const c = accentMap[accent];
   return (
@@ -178,11 +235,54 @@ function DottedList({
   );
 }
 
-export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
+// ── 統計チップ ──
+function StatChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col items-center rounded-lg bg-white/70 px-3 py-2 ring-1 ring-slate-200/70 dark:bg-slate-800/60 dark:ring-slate-700/60">
+      <span className="text-[15px] font-bold tabular-nums text-slate-800 dark:text-slate-100">{value}</span>
+      <span className="text-[10px] tracking-wider text-slate-500 dark:text-slate-400">{label}</span>
+    </div>
+  );
+}
+
+export function SummaryView({ summary, speakerNames, transcript, onJumpToTranscript }: SummaryViewProps) {
   const speakerLabel = (s: 'A' | 'B') =>
     speakerNames?.[s] ? speakerNames[s] : `話者${s}`;
 
   const isBotarhythm = getSummaryMode(summary) === 'botarhythm';
+
+  // ── セッション統計（書き起こしがあれば実データから、なければ章立てから推定） ──
+  const lastChapter = summary.chapters?.[summary.chapters.length - 1];
+  const durationSec =
+    transcript && transcript.length > 0
+      ? timestampToSeconds(transcript[transcript.length - 1].timestamp)
+      : lastChapter
+        ? timestampToSeconds(lastChapter.endTime)
+        : 0;
+
+  // ── セクションの動的採番（存在しないセクションがあっても欠番にしない） ──
+  const sectionDefs: Array<{ key: string; visible: boolean }> = [
+    { key: 'chapters',     visible: (summary.chapters?.length ?? 0) > 0 },
+    { key: 'pains',        visible: summary.clientPains.length > 0 },
+    { key: 'themes',       visible: isBotarhythm && (summary.underlyingThemes?.length ?? 0) > 0 },
+    { key: 'moments',      visible: isBotarhythm && (summary.sessionMoments?.length ?? 0) > 0 },
+    { key: 'stateShift',   visible: isBotarhythm && !!summary.clientStateShift },
+    { key: 'decisions',    visible: (summary.decisions?.length ?? 0) > 0 },
+    { key: 'advice',       visible: summary.adviceGiven.length > 0 },
+    { key: 'numbers',      visible: (summary.keyNumbers?.length ?? 0) > 0 },
+    { key: 'actions',      visible: summary.nextActions.length > 0 },
+    { key: 'homework',     visible: summary.homeworkForClient.length > 0 },
+    { key: 'quotes',       visible: summary.keyQuotes.length > 0 },
+    { key: 'coaching',     visible: isBotarhythm && !!summary.coachingInsights },
+    { key: 'assessment',   visible: true },
+    { key: 'nextSession',  visible: isBotarhythm && (summary.nextSessionSuggestions?.length ?? 0) > 0 },
+  ];
+  const numbering = new Map<string, string>();
+  let n = 0;
+  for (const def of sectionDefs) {
+    if (def.visible) numbering.set(def.key, ROMAN[n++] ?? String(n));
+  }
+  const num = (key: string) => numbering.get(key) ?? '';
 
   return (
     <article
@@ -204,19 +304,101 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
         </div>
       )}
 
+      {/* ── エグゼクティブブリーフ（30秒で全体把握） ── */}
+      {summary.executiveSummary && summary.executiveSummary.length > 0 && (
+        <div className="mb-12 rounded-xl border border-slate-200/80 bg-gradient-to-b from-slate-50 to-white p-5 dark:border-slate-700/60 dark:from-slate-800/50 dark:to-slate-900 sm:p-6">
+          <p className="mb-3 font-serif text-[10px] font-semibold tracking-[0.3em] text-slate-400 dark:text-slate-500">
+            EXECUTIVE BRIEF
+          </p>
+          <ul className="space-y-2">
+            {summary.executiveSummary.map((line, i) => (
+              <li key={i} className="flex gap-2.5 text-[15px] font-medium leading-[1.8] text-slate-800 dark:text-slate-100">
+                <span className="mt-[0.7em] h-[3px] w-3 shrink-0 rounded-full bg-[#0f3460] dark:bg-sky-400" aria-hidden />
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+
+          {/* 統計チップ */}
+          <div className="mt-4 flex flex-wrap gap-2">
+            {durationSec > 0 && <StatChip label="セッション時間" value={formatDuration(durationSec)} />}
+            {transcript && transcript.length > 0 && (
+              <StatChip label="発話数" value={`${transcript.length}`} />
+            )}
+            {(summary.decisions?.length ?? 0) > 0 && (
+              <StatChip label="決定事項" value={`${summary.decisions!.length}`} />
+            )}
+            {summary.nextActions.length > 0 && (
+              <StatChip label="アクション" value={`${summary.nextActions.length}`} />
+            )}
+            {summary.keyQuotes.length > 0 && (
+              <StatChip label="重要発言" value={`${summary.keyQuotes.length}`} />
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-12">
-        {/* I. 主要な課題・議題 */}
+        {/* セッションの流れ（チャプター） */}
+        {summary.chapters && summary.chapters.length > 0 && (
+          <section>
+            <SectionHeading number={num('chapters')} title="セッションの流れ" accent="slate" />
+            <ol className="space-y-0">
+              {summary.chapters.map((chapter, i) => {
+                const isLast = i === (summary.chapters?.length ?? 0) - 1;
+                return (
+                  <li key={i} className="flex gap-4">
+                    {/* 時刻 + 縦ライン */}
+                    <div className="flex w-[72px] shrink-0 flex-col items-end sm:w-[88px]">
+                      {onJumpToTranscript ? (
+                        <button
+                          type="button"
+                          onClick={() => onJumpToTranscript(chapter.startTime)}
+                          title="書き起こしのこの位置へジャンプ"
+                          className="font-mono text-[12px] tabular-nums text-sky-600 underline decoration-dotted underline-offset-2 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
+                        >
+                          {shortTime(chapter.startTime)}
+                        </button>
+                      ) : (
+                        <span className="font-mono text-[12px] tabular-nums text-slate-400 dark:text-slate-500">
+                          {shortTime(chapter.startTime)}
+                        </span>
+                      )}
+                      <span className="font-mono text-[10px] tabular-nums text-slate-300 dark:text-slate-600">
+                        〜{shortTime(chapter.endTime)}
+                      </span>
+                    </div>
+                    <div className="relative flex flex-col items-center">
+                      <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-slate-300 ring-2 ring-white dark:bg-slate-600 dark:ring-slate-900" />
+                      {!isLast && <span className="w-px flex-1 bg-slate-200 dark:bg-slate-700" />}
+                    </div>
+                    <div className={`min-w-0 flex-1 ${isLast ? '' : 'pb-5'}`}>
+                      <h3 className="text-[15px] font-semibold leading-snug text-slate-800 dark:text-slate-100">
+                        {chapter.title}
+                      </h3>
+                      <p className="mt-0.5 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
+                        {chapter.summary}
+                      </p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
+        )}
+
+        {/* 主要な課題・議題 */}
         {summary.clientPains.length > 0 && (
           <section>
-            <SectionHeading number="I" title="主要な課題・議題" accent="crimson" />
+            <SectionHeading number={num('pains')} title="主要な課題・議題" accent="crimson" />
             <DottedList items={summary.clientPains} dotClass="bg-[#c0392b] dark:bg-rose-400" />
           </section>
         )}
 
-        {/* II. 深層テーマ（Botarhythm） */}
+        {/* 深層テーマ（Botarhythm） */}
         {isBotarhythm && summary.underlyingThemes && summary.underlyingThemes.length > 0 && (
           <section>
-            <SectionHeading number="II" title="深層テーマ" accent="indigo" />
+            <SectionHeading number={num('themes')} title="深層テーマ" accent="indigo" />
             <div className="rounded-lg border border-indigo-100/80 bg-indigo-50/40 px-5 py-4 dark:border-indigo-900/40 dark:bg-indigo-950/30">
               <DottedList
                 items={summary.underlyingThemes}
@@ -227,10 +409,10 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
           </section>
         )}
 
-        {/* III. セッションの転換点（Botarhythm） */}
+        {/* セッションの転換点（Botarhythm） */}
         {isBotarhythm && summary.sessionMoments && summary.sessionMoments.length > 0 && (
           <section>
-            <SectionHeading number="III" title="セッションの転換点" accent="navy" />
+            <SectionHeading number={num('moments')} title="セッションの転換点" accent="navy" />
             <ol className="space-y-5">
               {summary.sessionMoments.map((moment, i) => {
                 const badge = MOMENT_TYPE_LABELS[moment.type] ?? MOMENT_TYPE_LABELS.insight;
@@ -260,10 +442,10 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
           </section>
         )}
 
-        {/* IV. クライアントの変化（Botarhythm） */}
+        {/* クライアントの変化（Botarhythm） */}
         {isBotarhythm && summary.clientStateShift && (
           <section>
-            <SectionHeading number="IV" title="セッション中の変化" accent="teal" />
+            <SectionHeading number={num('stateShift')} title="セッション中の変化" accent="teal" />
             <div className="rounded-lg border border-teal-100/80 bg-teal-50/40 px-5 py-4 dark:border-teal-900/40 dark:bg-teal-950/30">
               <p className="text-[15px] leading-[1.95] text-slate-700 dark:text-slate-200">
                 {summary.clientStateShift}
@@ -272,18 +454,68 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
           </section>
         )}
 
-        {/* V. アドバイス・提案 */}
+        {/* 決定事項 */}
+        {summary.decisions && summary.decisions.length > 0 && (
+          <section>
+            <SectionHeading number={num('decisions')} title="決定事項" accent="emerald" />
+            <ul className="space-y-2.5">
+              {summary.decisions.map((decision, i) => (
+                <li key={i} className="flex gap-3 leading-[1.85] text-slate-700 dark:text-slate-200">
+                  <svg
+                    className="mt-[0.45em] h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden
+                  >
+                    <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-[15px] font-medium">{decision}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {/* アドバイス・提案 */}
         {summary.adviceGiven.length > 0 && (
           <section>
-            <SectionHeading number={isBotarhythm ? 'V' : 'II'} title="アドバイス・提案" accent="navy" />
+            <SectionHeading number={num('advice')} title="アドバイス・提案" accent="navy" />
             <DottedList items={summary.adviceGiven} dotClass="bg-[#0f3460] dark:bg-sky-400" />
           </section>
         )}
 
-        {/* VI. ネクストアクション */}
+        {/* 数値・条件 */}
+        {summary.keyNumbers && summary.keyNumbers.length > 0 && (
+          <section>
+            <SectionHeading number={num('numbers')} title="数値・条件" accent="amber" />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {summary.keyNumbers.map((kn, i) => (
+                <div
+                  key={i}
+                  className="rounded-lg border border-amber-100 bg-amber-50/40 px-4 py-3 dark:border-amber-900/40 dark:bg-amber-950/20"
+                >
+                  <p className="text-[11px] font-medium tracking-wide text-amber-700/80 dark:text-amber-400/80">
+                    {kn.label}
+                  </p>
+                  <p className="mt-0.5 text-[17px] font-bold tabular-nums text-slate-800 dark:text-slate-100">
+                    {kn.value}
+                  </p>
+                  {kn.context && (
+                    <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                      {kn.context}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ネクストアクション */}
         {summary.nextActions.length > 0 && (
           <section>
-            <SectionHeading number={isBotarhythm ? 'VI' : 'III'} title="ネクストアクション" accent="navy" />
+            <SectionHeading number={num('actions')} title="ネクストアクション" accent="navy" />
             <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
               <table className="w-full text-[14px]">
                 <thead>
@@ -316,18 +548,18 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
           </section>
         )}
 
-        {/* VII. フォローアップ項目 */}
+        {/* フォローアップ項目 */}
         {summary.homeworkForClient.length > 0 && (
           <section>
-            <SectionHeading number={isBotarhythm ? 'VII' : 'IV'} title="フォローアップ項目" accent="amber" />
+            <SectionHeading number={num('homework')} title="フォローアップ項目" accent="amber" />
             <DottedList items={summary.homeworkForClient} dotClass="bg-amber-500 dark:bg-amber-400" />
           </section>
         )}
 
-        {/* VIII. 印象的なやりとり（SMS風） */}
+        {/* 印象的なやりとり（SMS風） */}
         {summary.keyQuotes.length > 0 && (
           <section>
-            <SectionHeading number={isBotarhythm ? 'VIII' : 'V'} title="印象的なやりとり" accent="navy" />
+            <SectionHeading number={num('quotes')} title="印象的なやりとり" accent="navy" />
             <div className="rounded-2xl bg-slate-50/70 px-3 py-5 ring-1 ring-slate-100 dark:bg-slate-800/30 dark:ring-slate-700/60 sm:px-5 sm:py-6">
               <ul className="space-y-4">
                 {summary.keyQuotes.map((quote, i) => (
@@ -336,6 +568,7 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
                     quote={quote}
                     isMine={quote.speaker === 'A'}
                     speakerName={speakerLabel(quote.speaker)}
+                    onJump={onJumpToTranscript}
                   />
                 ))}
               </ul>
@@ -343,10 +576,10 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
           </section>
         )}
 
-        {/* IX. コーチング効果分析（Botarhythm） */}
+        {/* コーチング効果分析（Botarhythm） */}
         {isBotarhythm && summary.coachingInsights && (
           <section>
-            <SectionHeading number="IX" title="コーチング効果分析" accent="violet" />
+            <SectionHeading number={num('coaching')} title="コーチング効果分析" accent="violet" />
             <div className="rounded-lg border border-violet-100/80 bg-violet-50/40 px-5 py-4 dark:border-violet-900/40 dark:bg-violet-950/30">
               <p className="text-[15px] leading-[1.95] text-slate-700 dark:text-slate-200">
                 {summary.coachingInsights}
@@ -355,10 +588,10 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
           </section>
         )}
 
-        {/* X. 総評・所感 */}
+        {/* 総評・所感 */}
         <section>
           <SectionHeading
-            number={isBotarhythm ? 'X' : 'VI'}
+            number={num('assessment')}
             title="総評・所感"
             accent="navy"
           />
@@ -367,10 +600,10 @@ export function SummaryView({ summary, speakerNames }: SummaryViewProps) {
           </p>
         </section>
 
-        {/* XI. 次回への提案（Botarhythm） */}
+        {/* 次回への提案（Botarhythm） */}
         {isBotarhythm && summary.nextSessionSuggestions && summary.nextSessionSuggestions.length > 0 && (
           <section>
-            <SectionHeading number="XI" title="次回への提案" accent="slate" />
+            <SectionHeading number={num('nextSession')} title="次回への提案" accent="slate" />
             <DottedList
               items={summary.nextSessionSuggestions}
               dotClass="bg-slate-400 dark:bg-slate-500"
