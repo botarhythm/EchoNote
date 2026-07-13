@@ -695,3 +695,10 @@ export async function getStaleChunkGroups(thresholdSec: number): Promise<string[
   );
   return (res.rows as { group_id: string }[]).map((r) => r.group_id);
 }
+
+/** S2S用: セッションのクライアント名を付け替える（伴走ボットの「直近の録音を〇〇さんに紐づけて」） */
+export async function updateSessionClientName(id: string, clientName: string): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(`UPDATE sessions SET client_name = $2 WHERE id = $1`, [id, clientName]);
+  return (res.rowCount ?? 0) > 0;
+}
