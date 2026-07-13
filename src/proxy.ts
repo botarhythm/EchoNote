@@ -18,6 +18,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/drive/poll') ||
     pathname.startsWith('/api/ingest') ||  // Bearerトークンで別途認証
+    pathname.startsWith('/api/s2s/') ||    // Bearerトークン(ECHONOTE_READ_TOKEN)で別途認証
     pathname.startsWith('/login') ||
     pathname.startsWith('/_next/') ||
     pathname === '/favicon.ico'
