@@ -23,6 +23,7 @@ import {
 import type { ShareRecord } from '@/lib/db';
 import { CrossAnalysisView } from './CrossAnalysisView';
 import { DELIMITER, TRAILING_DELIMITER, splitTokens } from '@/lib/maskedTermsInput';
+import { buildShareUrl } from '@/lib/shareUrl';
 
 type ActivePanel = 'regenerate' | 'share' | 'history' | 'crossanalysis' | null;
 
@@ -262,7 +263,7 @@ export function SessionActionBar({
       });
       if (!res.ok) return;
       const { token } = (await res.json()) as { token: string };
-      const url = `${window.location.origin}/share/${token}`;
+      const url = buildShareUrl(token);
       await navigator.clipboard.writeText(url);
       setShareCreated(url);
       setMaskedTerms([]);
@@ -276,7 +277,7 @@ export function SessionActionBar({
 
   // ── 履歴 ──
   const copyShare = async (token: string) => {
-    const url = `${window.location.origin}/share/${token}`;
+    const url = buildShareUrl(token);
     await navigator.clipboard.writeText(url);
     setCopied(token);
     setTimeout(() => setCopied(null), 2000);
@@ -728,7 +729,7 @@ export function SessionActionBar({
               ) : (
                 <ul className="divide-y divide-slate-100 dark:divide-slate-700/50">
                   {shares.map((share) => {
-                    const url = `${typeof window !== 'undefined' ? window.location.origin : ''}/share/${share.token}`;
+                    const url = buildShareUrl(share.token);
                     const date = new Date(share.createdAt).toLocaleString('ja-JP', {
                       month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
                     });

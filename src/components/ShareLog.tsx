@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { ShareRecord } from '@/lib/db';
+import { buildShareUrl } from '@/lib/shareUrl';
 
 interface ShareLogProps {
   sessionId: string;
@@ -28,7 +29,7 @@ export function ShareLog({ sessionId, refreshTrigger }: ShareLogProps) {
   }, [load, refreshTrigger]);
 
   const copy = async (token: string) => {
-    const url = `${window.location.origin}/share/${token}`;
+    const url = buildShareUrl(token);
     await navigator.clipboard.writeText(url);
     setCopied(token);
     setTimeout(() => setCopied(null), 2000);
@@ -65,7 +66,7 @@ export function ShareLog({ sessionId, refreshTrigger }: ShareLogProps) {
         <div className="border-t border-slate-200 dark:border-slate-700">
           <ul className="divide-y divide-slate-100 dark:divide-slate-700/50">
             {shares.map((share) => {
-              const url = `${typeof window !== 'undefined' ? window.location.origin : ''}/share/${share.token}`;
+              const url = buildShareUrl(share.token);
               const date = new Date(share.createdAt).toLocaleString('ja-JP', {
                 month: 'numeric',
                 day: 'numeric',

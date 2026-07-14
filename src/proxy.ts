@@ -11,6 +11,37 @@ async function hashPassword(password: string): Promise<string> {
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // ── 共有リンクの独自ドメイン対応（NEXT_PUBLIC_SHARE_BASE_URL 設定時のみ有効） ──
+  const shareBase = process.env.NEXT_PUBLIC_SHARE_BASE_URL;
+  if (shareBase) {
+    const shareHost = new URL(shareBase).host;
+    // nextUrl.host はバインド先を返すため、実際にリクエストされたホストはヘッダから取る
+    const host =
+      request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? '';
+    const isLocalhost = host.startsWith('localhost') || host.startsWith('127.0.0.1');
+
+    // 旧ドメインで開かれた共有リンクは独自ドメインへ恒久リダイレクト（発行済みリンクの互換維持）
+    if (!isLocalhost && host !== shareHost && pathname.startsWith('/share/')) {
+      return NextResponse.redirect(
+        new URL(pathname + request.nextUrl.search, shareBase),
+        308
+      );
+    }
+
+    // 共有ドメインでは共有ページと必要なAPI・アセット以外を出さない。
+    // ルート等にアクセスされたらStudioサイトへ誘導し、管理画面をこのドメインに露出させない
+    if (
+      host === shareHost &&
+      !pathname.startsWith('/share/') &&
+      !pathname.startsWith('/api/share/') &&
+      !pathname.startsWith('/_next/') &&
+      !pathname.startsWith('/avatars/') &&
+      pathname !== '/favicon.ico'
+    ) {
+      return NextResponse.redirect('https://studio.botarhythm.com', 307);
+    }
+  }
+
   // 認証不要なパス
   if (
     pathname.startsWith('/share/') ||
