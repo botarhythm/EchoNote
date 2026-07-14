@@ -218,16 +218,20 @@ export async function moveFileToClientFolder(fileId: string, clientName: string)
   });
 }
 
-/** 任意のバイナリを指定フォルダへ作成する（画像・サイドカー等の汎用アップロード）。 */
+/**
+ * 任意のバイナリを指定フォルダへ作成する（画像等の汎用アップロード）。
+ * description を渡すと Drive ファイルの「説明」メタデータに載る（詳細ペインで閲覧可・別ファイル不要）。
+ */
 export async function uploadBinaryToFolder(
   folderId: string,
   filename: string,
   mimeType: string,
-  buffer: Buffer
+  buffer: Buffer,
+  description?: string
 ): Promise<string> {
   const drive = getDrive();
   const res = await drive.files.create({
-    requestBody: { name: filename, parents: [folderId] },
+    requestBody: { name: filename, parents: [folderId], description },
     media: { mimeType, body: Readable.from(buffer) },
     fields: 'id',
     supportsAllDrives: true,
@@ -243,9 +247,20 @@ const SCREENSHOT_EXT: Record<string, string> = {
   'image/webp': '.webp',
 };
 
+/** ISO 文字列を JST の「YYYYMMDD_HHmm」に整形する（録音の YYYYMMDD_ と日付順に並ぶ命名）。 */
+function jstFileStamp(iso: string): string {
+  const parsed = iso ? new Date(iso) : new Date();
+  const d = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  // sv-SE ロケールは "YYYY-MM-DD HH:mm:ss" 形式
+  const s = d.toLocaleString('sv-SE', { timeZone: 'Asia/Tokyo' });
+  return s.slice(0, 16).replace(/[-:]/g, '').replace(' ', '_'); // 例: "20260714_1430"
+}
+
 /**
- * 伴走ボットからのスクショ＋解析結果を、Processed/{clientName}/screenshots/ に保存する。
- * 画像本体と、解析結果を収めた同名 .json サイドカー（識別子は入れず匿名化）をペアで置く。
+ * 伴走ボットからのスクショを、録音と同じクライアント直下フォルダ（Processed/{clientName}/）へ
+ * 時系列で保存する。解析結果は別ファイル（サイドカー）にせず Drive ファイルの「説明」メタデータに
+ * 載せる — 見返す時に画像と説明が1ファイルにまとまり、時系列が JSON で寸断されない。
+ * ハッシュ・撮影時刻・mediaType は Drive 自身のメタデータ（createdTime/mimeType）で代替できる。
  * @returns 画像ファイルの Drive ID
  */
 export async function saveScreenshot(input: {
@@ -256,32 +271,19 @@ export async function saveScreenshot(input: {
   capturedAt: string;
 }): Promise<string> {
   const clientFolder = await getOrCreateClientFolder(input.clientName);
-  const ssFolder = await getOrCreateSubfolder(clientFolder, 'screenshots');
 
   const buffer = Buffer.from(input.imageBase64, 'base64');
   const hash8 = createHash('sha256').update(buffer).digest('hex').slice(0, 8);
-  const stamp = (input.capturedAt || 'shot').replace(/[^0-9A-Za-z]/g, '-');
-  const baseName = `${stamp}_${hash8}`;
   const ext = SCREENSHOT_EXT[input.mediaType] ?? '.jpg';
+  const filename = `${jstFileStamp(input.capturedAt)}_${hash8}${ext}`;
 
-  const fileId = await uploadBinaryToFolder(ssFolder, `${baseName}${ext}`, input.mediaType, buffer);
-  const sidecar = JSON.stringify(
-    {
-      description: input.description,
-      mediaType: input.mediaType,
-      capturedAt: input.capturedAt,
-      hash: hash8,
-    },
-    null,
-    2
+  return uploadBinaryToFolder(
+    clientFolder,
+    filename,
+    input.mediaType,
+    buffer,
+    input.description || undefined
   );
-  await uploadBinaryToFolder(
-    ssFolder,
-    `${baseName}.json`,
-    'application/json',
-    Buffer.from(sidecar, 'utf-8')
-  );
-  return fileId;
 }
 
 /**

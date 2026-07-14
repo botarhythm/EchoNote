@@ -5,8 +5,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * S2S書込API: 伴走ボットが解析済みスクショを Drive のクライアント別フォルダへアーカイブする。
- * Processed/{clientName}/screenshots/ に 画像＋.json サイドカー（解析結果）をペア保存する。
+ * S2S書込API: 伴走ボットが解析済みスクショを Drive のクライアント直下フォルダへアーカイブする。
+ * Processed/{clientName}/ に録音と同じ階層で時系列保存し、解析結果は Drive ファイルの説明欄に載せる。
  *
  * 認証: Authorization: Bearer <ECHONOTE_S2S_WRITE_TOKEN>（書込専用・読取とは分離）
  * ボディ: { clientName, imageBase64, mediaType, description, capturedAt }
