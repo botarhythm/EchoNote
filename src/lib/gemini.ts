@@ -7,6 +7,7 @@ import pLimit from 'p-limit';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ffmpegStatic: string | null = require('ffmpeg-static');
 import { savePartialTranscript } from './db';
+import { getBrandConfig, type BrandConfig } from './branding';
 import type { Utterance } from './types';
 
 const CHUNK_DURATION_SEC = 600; // 10分チャンク
@@ -222,7 +223,38 @@ async function uploadViaFilesApi(
 
 // ─── プロンプト ─────────────────────────────────────────────────────────────
 
-function buildPrompt(prevContext: string | null): string {
+/**
+ * 話者の前提セクションを組み立てる。
+ * ブランド設定があるインスタンスでは「話者A=ホスト（高確率で元沢等の設定人物）」を
+ * 事前確率として明示し、名前の呼ばれ方・進行役という役割の手がかりで判別させる。
+ * 未設定インスタンスでは従来どおり汎用的な前提のみ。
+ */
+function buildSpeakerPremise(brand: BrandConfig | null): string {
+  const common = `- 話者の割当は発話順ではなく役割で判断すること（最初に話した人が必ずしも話者Aではない）
+- 話者が1人しかいない場合でも、必ず話者Aとして出力してください
+- 全チャンクで話者ラベルA/Bを一貫して使用してください`;
+
+  if (!brand) {
+    return `- これはコンサルティング/アドバイザリーセッションの録音です
+- 話者Aはアドバイザー（ホスト・進行役）、話者Bはクライアント（相談者）です
+- 会話の内容から話者を判別してください
+${common}`;
+  }
+
+  // 呼び名の候補（通称・フルネーム・検出キーワードの重複除去）
+  const aliases = [brand.hostName, brand.hostFullName, ...brand.hostKeywords]
+    .filter((s, i, arr) => s && arr.indexOf(s) === i)
+    .join('」「');
+
+  return `- これは「${brand.name}」のセッション録音です
+- **話者Aはホスト「${brand.hostFullName}（${brand.hostName}）」である可能性が非常に高い**。この前提を強く優先すること
+- 話者Bはクライアント（相談者）です
+- ホストを見分ける手がかり: 相手から「${aliases}」等と呼ばれる／セッションを進行し質問で導く側／サービス提供者・アドバイザーとして語る側
+- 明確な証拠（ホストが不在の録音である等）がある場合のみ、この前提を覆してよい
+${common}`;
+}
+
+function buildPrompt(prevContext: string | null, speakerPremise: string): string {
   const contextSection = prevContext
     ? `【前のチャンクとの接続情報】
 前チャンク末尾の発話（話者の文脈を引き継いでください）:
@@ -234,12 +266,7 @@ ${prevContext}
   return `${contextSection}以下の音声を文字起こしし、話者を分離してください。
 
 【話者の前提】
-- これはコンサルティング/アドバイザリーセッションの録音です
-- 話者Aはアドバイザー（もっちゃん）です
-- 話者Bはクライアント（相談者）です
-- 会話の内容から話者を判別してください
-- 話者が1人しかいない場合でも、必ず話者Aとして出力してください
-- 全チャンクで話者ラベルA/Bを一貫して使用してください
+${speakerPremise}
 
 【出力形式】
 必ず以下のJSON配列のみを返してください。他のテキストは一切含めないこと。
@@ -273,7 +300,8 @@ async function transcribeChunk(
   mimeType: string,
   chunkIndex: number,
   offsetSec: number,
-  prevContext: string | null
+  prevContext: string | null,
+  speakerPremise: string
 ): Promise<Utterance[]> {
   const fileUri = await uploadViaFilesApi(ai, chunkPath, mimeType);
 
@@ -286,7 +314,7 @@ async function transcribeChunk(
             role: 'user',
             parts: [
               { fileData: { mimeType, fileUri } },
-              { text: buildPrompt(prevContext) },
+              { text: buildPrompt(prevContext, speakerPremise) },
             ],
           },
         ],
@@ -438,6 +466,14 @@ export async function transcribeAudio(
   const sizeMB = (audioBuffer.length / 1024 / 1024).toFixed(1);
   const tmpId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+  // 話者認定の事前確率: ブランド設定のホスト（例: 元沢）を話者Aとして強く優先する。
+  // 設定取得に失敗しても文字起こし自体は汎用前提で続行する。
+  const brand = await getBrandConfig().catch(() => null);
+  const speakerPremise = buildSpeakerPremise(brand);
+  if (brand) {
+    console.log(`[EchoNote] 話者前提: 話者A=${brand.hostFullName}（${brand.hostName}）を優先`);
+  }
+
   await onProgress?.(`✍️ 音声ファイルを解析中... (${sizeMB}MB)`);
 
   // ── チャンク分割を試みる ──────────────────────────────────────────────────
@@ -470,7 +506,7 @@ export async function transcribeAudio(
         () =>
           ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: [{ role: 'user', parts: [{ fileData: { mimeType, fileUri } }, { text: buildPrompt(null) }] }],
+            contents: [{ role: 'user', parts: [{ fileData: { mimeType, fileUri } }, { text: buildPrompt(null, speakerPremise) }] }],
             config: { responseMimeType: 'application/json', maxOutputTokens: 65536 },
           }),
         'AI generateContent'
@@ -490,7 +526,7 @@ export async function transcribeAudio(
         () =>
           ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: [{ role: 'user', parts: [{ fileData: { mimeType, fileUri } }, { text: buildPrompt(null) }] }],
+            contents: [{ role: 'user', parts: [{ fileData: { mimeType, fileUri } }, { text: buildPrompt(null, speakerPremise) }] }],
             config: { responseMimeType: 'application/json', maxOutputTokens: 65536 },
           }),
         'AI generateContent'
@@ -529,13 +565,13 @@ export async function transcribeAudio(
     // limit() で並列度を制御しつつ順次投入
     const task = limit(async () => {
       try {
-        let utterances = await transcribeChunk(ai, path, mimeType, idx, offsetSec, ctx);
+        let utterances = await transcribeChunk(ai, path, mimeType, idx, offsetSec, ctx, speakerPremise);
 
         // 空結果（JSON失敗・空レスポンス）は prevContext なしで1回再試行
         if (utterances.length === 0 && existsSync(path)) {
           console.log(`[EchoNote] チャンク ${idx + 1}/${total}: 空結果 → 再試行します`);
           await onProgress?.(`🔄 チャンク ${idx + 1}/${total} を再試行中...`);
-          utterances = await transcribeChunk(ai, path, mimeType, idx, offsetSec, null);
+          utterances = await transcribeChunk(ai, path, mimeType, idx, offsetSec, null, speakerPremise);
         }
 
         allUtterances[idx] = utterances;

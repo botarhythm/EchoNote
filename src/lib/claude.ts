@@ -689,7 +689,12 @@ export function sanitizeSessionDate(
   return inferred;
 }
 
-/** 初回自動サマリー: ノーマル議事録モード固定（Botarhythm固有の前提を一切持たない） */
+/**
+ * 初回自動サマリー: ノーマル議事録モード固定（分析観点にBotarhythm固有の前提を持たない）。
+ * ただし話者の帰属だけはブランド設定のホスト前提を注入する:
+ * 文字起こしの話者Aは高確率でホスト（例: 元沢）なので、clientName にホスト名が
+ * 入る事故と、発言帰属の取り違えを防ぐ。
+ */
 export async function generateSummary(
   transcript: Utterance[],
   originalFilename: string,
@@ -703,9 +708,19 @@ export async function generateSummary(
     ? `\n【録音の投入日（日本時間）】\n${uploadDate}\n※セッション日付（date）の判断材料。会話やファイル名から日付を特定できない場合はこの投入日を使うこと。推定した日付がこの投入日より未来、または数ヶ月以上過去になる場合は年の読み違いを疑い、投入日と整合する解釈を優先すること。\n`
     : '';
 
+  const brand = await getBrandConfig().catch(() => null);
+  const speakerSection = brand
+    ? `\n【話者の前提（このインスタンスの設定）】
+- 話者Aは高確率でホスト「${brand.hostFullName}（${brand.hostName}）」です
+- clientName はクライアント側（通常は話者B）から推定すること。ホスト（${brand.hostName}・${brand.hostFullName}）の名前を clientName に入れないこと
+- keyQuotes 等の発言帰属もこの前提で解釈すること
+- 文字起こしの内容がこの前提と明確に矛盾する場合（ホスト不在の録音など）は内容を優先すること
+`
+    : '';
+
   const userPrompt = `【元のファイル名】
 ${originalFilename}
-${uploadDateSection}
+${uploadDateSection}${speakerSection}
 【文字起こし】
 ${transcriptText}`;
 
