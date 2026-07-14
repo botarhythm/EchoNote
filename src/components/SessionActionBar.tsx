@@ -12,7 +12,14 @@ import type {
   SessionSummary,
   ClientSettings,
 } from '@/lib/types';
-import { DEPTH_LABELS, PATTERN_LABELS, DEPTHS_BY_MODE, PATTERNS_BY_MODE } from '@/lib/types';
+import {
+  DEPTH_LABELS,
+  PATTERN_LABELS,
+  DEPTH_DESCRIPTIONS,
+  PATTERN_DESCRIPTIONS,
+  DEPTHS_BY_MODE,
+  PATTERNS_BY_MODE,
+} from '@/lib/types';
 import type { ShareRecord } from '@/lib/db';
 import { CrossAnalysisView } from './CrossAnalysisView';
 import { DELIMITER, TRAILING_DELIMITER, splitTokens } from '@/lib/maskedTermsInput';
@@ -478,46 +485,50 @@ export function SessionActionBar({
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                       深度
                     </p>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="grid gap-2 sm:grid-cols-3">
                       {(DEPTHS_BY_MODE[mode] as SummaryDepth[]).map((d) => (
                         <button
                           key={d} onClick={() => setDepth(d)}
-                          className={`rounded-full px-3 py-1 text-sm transition-colors active:scale-95 ${
+                          className={`rounded-lg border px-3 py-2 text-left transition-colors active:scale-95 ${
                             depth === d
                               ? d === 'deep'
-                                ? 'bg-amber-600 text-white'
-                                : 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                              : 'border border-slate-300 text-slate-600 hover:border-slate-500 dark:border-slate-600 dark:text-slate-400 dark:hover:border-slate-400'
+                                ? 'border-amber-600 bg-amber-600 text-white'
+                                : 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                              : 'border-slate-300 text-slate-600 hover:border-slate-500 dark:border-slate-600 dark:text-slate-400 dark:hover:border-slate-400'
                           }`}
                         >
-                          {DEPTH_LABELS[d]}
+                          <span className="block text-sm font-medium">{DEPTH_LABELS[d]}</span>
+                          <span className="mt-0.5 block text-[11px] font-normal leading-snug opacity-75">
+                            {(DEPTH_DESCRIPTIONS[mode] as Record<SummaryDepth, string>)[d]}
+                          </span>
                         </button>
                       ))}
                     </div>
-                    {depth === 'deep' && (
-                      <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">
-                        Botarhythm Studio のサービス哲学・コーチング観点で徹底分析します
-                      </p>
-                    )}
                   </div>
 
                   {/* パターン（モード別） */}
                   <div>
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">重点パターン（複数選択可）</p>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="grid gap-2 sm:grid-cols-2">
                       {(PATTERNS_BY_MODE[mode] as Array<NormalPattern | BotarhythmPattern>).map((p) => (
                         <button
                           key={p} onClick={() => togglePattern(p)}
-                          className={`rounded-full px-3 py-1 text-sm transition-colors active:scale-95 ${
+                          className={`rounded-lg border px-3 py-2 text-left transition-colors active:scale-95 ${
                             patterns.includes(p)
-                              ? 'bg-blue-600 text-white dark:bg-blue-500'
-                              : 'border border-slate-300 text-slate-600 hover:border-slate-500 dark:border-slate-600 dark:text-slate-400 dark:hover:border-slate-400'
+                              ? 'border-blue-600 bg-blue-600 text-white dark:border-blue-500 dark:bg-blue-500'
+                              : 'border-slate-300 text-slate-600 hover:border-slate-500 dark:border-slate-600 dark:text-slate-400 dark:hover:border-slate-400'
                           }`}
                         >
-                          {PATTERN_LABELS[p]}
+                          <span className="block text-sm font-medium">{PATTERN_LABELS[p]}</span>
+                          <span className="mt-0.5 block text-[11px] font-normal leading-snug opacity-75">
+                            {PATTERN_DESCRIPTIONS[p]}
+                          </span>
                         </button>
                       ))}
                     </div>
+                    <p className="mt-1.5 text-xs text-slate-400">
+                      選択しない場合は標準バランスで生成。複数選ぶと各観点がそれぞれ強化されます
+                    </p>
                   </div>
 
                   {/* 補正メモ */}

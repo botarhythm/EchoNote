@@ -78,6 +78,21 @@ export interface SessionSummary {
   nextSessionSuggestions?: string[];     // 次回セッションへの提案アジェンダ
 }
 
+/**
+ * クライアント共有向けサマリー：コーチ側の戦略・分析にあたるフィールドを除去する。
+ * 共有APIの配信前に適用し、ブラウザに届くJSON自体からコーチ視点の情報を消す。
+ */
+export function toClientFacingSummary(summary: SessionSummary): SessionSummary {
+  const client: SessionSummary = { ...summary, mode: 'normal' };
+  delete client.sessionMoments;
+  delete client.coachingInsights;
+  delete client.underlyingThemes;
+  delete client.clientStateShift;
+  delete client.nextSessionSuggestions;
+  delete client.contractTopics;
+  return client;
+}
+
 /** mode 未設定の過去データも扱えるよう、フィールドの有無から推測する */
 export function getSummaryMode(summary: SessionSummary): SummaryMode {
   if (summary.mode) return summary.mode;
@@ -185,6 +200,32 @@ export const PATTERN_LABELS: Record<SummaryPattern, string> = {
   coaching:   'コーチング観点',
   strategy:   'ビジネス戦略',
   problem:    '課題分析',
+};
+
+/** 深度ごとの結果イメージ（再生成UIのボタン解説）。プロンプト指示の要点と一致させること */
+export const DEPTH_DESCRIPTIONS: {
+  normal: Record<NormalDepth, string>;
+  botarhythm: Record<BotarhythmDepth, string>;
+} = {
+  normal: {
+    simple:   '要点だけを2〜3項目に絞った、2分で読める短い議事録',
+    standard: '論点・決定事項・アクションを一通り押さえた実用議事録',
+    detailed: '背景や根拠まで記録し、欠席者の後読みにも耐える詳細版',
+  },
+  botarhythm: {
+    standard: '全体像の整理が中心。深層分析は最小限の軽めサマリー',
+    detailed: '転換点・深層テーマ・次回提案を必ず含む本格レポート',
+    deep:     '心理変化やコーチング効果まで読み込む、最も濃い徹底分析',
+  },
+};
+
+/** 重点パターンごとの結果イメージ（再生成UIのボタン解説） */
+export const PATTERN_DESCRIPTIONS: Record<SummaryPattern, string> = {
+  action:     '「誰が・何を・いつまでに」を具体化したTODO中心のまとめに',
+  psychology: '感情・心理的ブロック・セッション中の変化を重点的に描写',
+  coaching:   'コーチの質問やリフレームがどう効いたかを場面ごとに評価',
+  strategy:   '提案をビジネスインパクトと優先度で整理し、構造的問題を特定',
+  problem:    '課題を表面症状→背景→根本原因の3層に掘り下げて整理',
 };
 
 /** モードごとに利用可能な深度 */
