@@ -40,20 +40,50 @@ export async function POST(
   }
 
   const session = await getSession(id);
-  const updated = await updateSessionClientName(id, clientName);
-  if (!updated) {
+  if (!session) {
     return NextResponse.json({ error: `セッション ${id} が見つかりません` }, { status: 404 });
   }
 
-  // 処理済みセッションのみ、Drive 上のファイルをクライアント別サブフォルダへ追従移動（ベストエフォート）。
-  // 処理中セッションは poller 完了時の moveToProcessed が正しいフォルダへ入れるため、ここでは触らない。
-  if (session && session.status === 'done') {
+  // 重複セッションへの割り当ては元セッションに解決する。
+  // サマリー・書き起こしは元セッションにしか無く、資産同期（clients/[name]/sessions）も
+  // done+サマリーありしか返さないため、重複側だけを付け替えると取り込みが空振りする。
+  const targetId = session.duplicateOf ?? id;
+  const updated = await updateSessionClientName(targetId, clientName);
+  if (!updated) {
+    return NextResponse.json(
+      { error: `セッション ${targetId} が見つかりません` },
+      { status: 404 }
+    );
+  }
+  // 重複側の記録も同じ分類に揃える（一覧表示の整合のため。失敗しても本体は成立）
+  if (targetId !== id) {
+    await updateSessionClientName(id, clientName).catch(() => false);
+  }
+
+  // Drive 上のファイルをクライアント別サブフォルダへ追従移動（ベストエフォート）。
+  // done=処理済み本体 / duplicate=退避済み重複ファイル。処理中セッションは
+  // poller 完了時の moveToProcessed が正しいフォルダへ入れるため、ここでは触らない。
+  if (session.status === 'done' || session.status === 'duplicate') {
     try {
       await moveFileToClientFolder(session.meta.driveFileId, clientName);
     } catch (err) {
       console.error(`[s2s/assign] フォルダ追従移動に失敗 (${id}):`, err);
     }
   }
+  if (targetId !== id) {
+    // 元セッションのファイルも追従（ユーザーがDriveから削除済みの場合は静かに失敗）
+    try {
+      await moveFileToClientFolder(targetId, clientName);
+    } catch (err) {
+      console.error(`[s2s/assign] 元セッションの追従移動に失敗 (${targetId}):`, err);
+    }
+  }
 
-  return NextResponse.json({ ok: true, id, clientName });
+  return NextResponse.json({
+    ok: true,
+    id,
+    clientName,
+    resolvedTo: targetId,
+    duplicateResolved: targetId !== id,
+  });
 }

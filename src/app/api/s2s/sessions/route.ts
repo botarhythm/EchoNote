@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
     status: s.status,
     title: s.summary?.title ?? null,
     createdAt: s.createdAt ?? null, // Drive検知日時（伴走ボットが「本日投入分」を確実に特定するため）
+    duplicateOf: s.duplicateOf ?? null, // 重複録音の場合の元セッションID（assignは元に解決される）
   }));
   return NextResponse.json({ ok: true, sessions: lean });
 }
