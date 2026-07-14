@@ -150,6 +150,33 @@ export function Infographic({ summary, speakerALabel, speakerBLabel }: Infograph
     color: tooltipText,
   };
 
+  // 円グラフのラベル描画。Pie本体にstyle={{ fill }}を渡すとセクターの塗りまで
+  // 上書きされ全て灰色になるため、ラベル側だけをここで着色する
+  const renderPieLabel = ({
+    x,
+    y,
+    textAnchor,
+    name,
+    value,
+  }: {
+    x?: number;
+    y?: number;
+    textAnchor?: 'start' | 'middle' | 'end' | 'inherit';
+    name?: string;
+    value?: number;
+  }) => (
+    <text
+      x={x}
+      y={y}
+      textAnchor={textAnchor}
+      dominantBaseline="central"
+      fontSize={11}
+      fill={axisColor}
+    >
+      {`${name}: ${value}`}
+    </text>
+  );
+
   return (
     <div className="space-y-6">
       {/* サマリー構成（全モード共通） */}
@@ -192,9 +219,8 @@ export function Infographic({ summary, speakerALabel, speakerBLabel }: Infograph
                   innerRadius={40}
                   outerRadius={80}
                   paddingAngle={2}
-                  label={({ name, value }) => `${name}: ${value}`}
+                  label={renderPieLabel}
                   labelLine={false}
-                  style={{ fontSize: 11, fill: axisColor }}
                 >
                   {speakerData.map((entry) => (
                     <Cell key={entry.name} fill={entry.color} />
@@ -224,9 +250,8 @@ export function Infographic({ summary, speakerALabel, speakerBLabel }: Infograph
                   innerRadius={40}
                   outerRadius={80}
                   paddingAngle={2}
-                  label={({ name, value }) => `${name}: ${value}`}
+                  label={renderPieLabel}
                   labelLine={false}
-                  style={{ fontSize: 11, fill: axisColor }}
                 >
                   {momentData.map((entry) => (
                     <Cell key={entry.name} fill={entry.color} />
