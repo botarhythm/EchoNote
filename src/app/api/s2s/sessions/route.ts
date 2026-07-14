@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
     date: s.meta.date,
     status: s.status,
     title: s.summary?.title ?? null,
+    createdAt: s.createdAt ?? null, // Drive検知日時（伴走ボットが「本日投入分」を確実に特定するため）
   }));
   return NextResponse.json({ ok: true, sessions: lean });
 }

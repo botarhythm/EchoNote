@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { updateSessionClientName } from '@/lib/db';
+import { getSession, updateSessionClientName } from '@/lib/db';
+import { moveFileToClientFolder } from '@/lib/drive';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,9 +39,21 @@ export async function POST(
     return NextResponse.json({ error: 'clientName が必要です' }, { status: 400 });
   }
 
+  const session = await getSession(id);
   const updated = await updateSessionClientName(id, clientName);
   if (!updated) {
     return NextResponse.json({ error: `セッション ${id} が見つかりません` }, { status: 404 });
   }
+
+  // 処理済みセッションのみ、Drive 上のファイルをクライアント別サブフォルダへ追従移動（ベストエフォート）。
+  // 処理中セッションは poller 完了時の moveToProcessed が正しいフォルダへ入れるため、ここでは触らない。
+  if (session && session.status === 'done') {
+    try {
+      await moveFileToClientFolder(session.meta.driveFileId, clientName);
+    } catch (err) {
+      console.error(`[s2s/assign] フォルダ追従移動に失敗 (${id}):`, err);
+    }
+  }
+
   return NextResponse.json({ ok: true, id, clientName });
 }

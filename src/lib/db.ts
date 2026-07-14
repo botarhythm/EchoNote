@@ -147,6 +147,7 @@ function rowToSession(row: SessionRow): Session {
     error: row.error_message || undefined,
     processedAt: row.processed_at || undefined,
     progressMessage: row.progress_message || undefined,
+    createdAt: row.created_at || undefined,
   };
 }
 

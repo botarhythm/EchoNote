@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import type { drive_v3 } from 'googleapis';
 import { Readable } from 'stream';
+import { createHash } from 'node:crypto';
 
 export interface DriveFile {
   id: string;
@@ -136,17 +137,151 @@ export async function renameFile(fileId: string, newName: string): Promise<void>
   });
 }
 
-export async function moveToProcessed(fileId: string): Promise<void> {
+/**
+ * 処理済み録音を Processed フォルダへ移動する（監視フォルダから親を付け替え）。
+ * clientName を渡すと Processed/{clientName}/ サブフォルダへ、未指定なら Processed 直下へ。
+ * 既存の Processed 直下配置（clientName 未指定時）とは非互換にしない。
+ */
+export async function moveToProcessed(fileId: string, clientName?: string): Promise<void> {
   const folderId = process.env.DRIVE_FOLDER_ID;
   const processedFolderId = process.env.DRIVE_PROCESSED_FOLDER_ID;
   if (!processedFolderId || !folderId) return;
 
+  const dest = clientName ? await getOrCreateClientFolder(clientName) : processedFolderId;
   const drive = getDrive();
   await drive.files.update({
     fileId,
-    addParents: processedFolderId,
+    addParents: dest,
     removeParents: folderId,
   });
+}
+
+/**
+ * 指定フォルダ配下の名前付きサブフォルダを取得・作成する（get-or-create）。
+ * getOrCreateChunksFolderId と同型。parentId/name の組で ID をメモ化する。
+ */
+const subfolderCache = new Map<string, string>();
+export async function getOrCreateSubfolder(parentId: string, name: string): Promise<string> {
+  const cacheKey = `${parentId}/${name}`;
+  const cached = subfolderCache.get(cacheKey);
+  if (cached) return cached;
+
+  const drive = getDrive();
+  const safeName = name.replace(/'/g, "\\'"); // list クエリのシングルクオートをエスケープ
+  const res = await drive.files.list({
+    q: `'${parentId}' in parents and name = '${safeName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+    fields: 'files(id)',
+    pageSize: 1,
+  });
+  const existing = res.data.files?.[0];
+  if (existing?.id) {
+    subfolderCache.set(cacheKey, existing.id);
+    return existing.id;
+  }
+  const created = await drive.files.create({
+    requestBody: {
+      name,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentId],
+    },
+    fields: 'id',
+  });
+  if (!created.data.id) throw new Error(`サブフォルダ作成失敗: ${name}`);
+  subfolderCache.set(cacheKey, created.data.id);
+  return created.data.id;
+}
+
+/** DRIVE_PROCESSED_FOLDER_ID 配下のクライアント別サブフォルダ（Processed/{clientName}/）。 */
+export async function getOrCreateClientFolder(clientName: string): Promise<string> {
+  const processedFolderId = process.env.DRIVE_PROCESSED_FOLDER_ID;
+  if (!processedFolderId) throw new Error('DRIVE_PROCESSED_FOLDER_ID が設定されていません');
+  return getOrCreateSubfolder(processedFolderId, clientName);
+}
+
+/**
+ * 既に Processed 配下にあるファイルを、指定クライアントのサブフォルダへ移動する。
+ * assign（クライアント付け替え）の追従用。現在の親を removeParents に指定して移し替える。
+ */
+export async function moveFileToClientFolder(fileId: string, clientName: string): Promise<void> {
+  const processedFolderId = process.env.DRIVE_PROCESSED_FOLDER_ID;
+  if (!processedFolderId) return;
+
+  const dest = await getOrCreateClientFolder(clientName);
+  const drive = getDrive();
+  const cur = await drive.files.get({ fileId, fields: 'parents' });
+  const parents = cur.data.parents || [];
+  if (parents.includes(dest)) return; // 既に正しいフォルダに居る
+  await drive.files.update({
+    fileId,
+    addParents: dest,
+    removeParents: parents.join(',') || undefined,
+  });
+}
+
+/** 任意のバイナリを指定フォルダへ作成する（画像・サイドカー等の汎用アップロード）。 */
+export async function uploadBinaryToFolder(
+  folderId: string,
+  filename: string,
+  mimeType: string,
+  buffer: Buffer
+): Promise<string> {
+  const drive = getDrive();
+  const res = await drive.files.create({
+    requestBody: { name: filename, parents: [folderId] },
+    media: { mimeType, body: Readable.from(buffer) },
+    fields: 'id',
+    supportsAllDrives: true,
+  });
+  if (!res.data.id) throw new Error('Drive アップロード失敗（uploadBinaryToFolder）');
+  return res.data.id;
+}
+
+const SCREENSHOT_EXT: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+};
+
+/**
+ * 伴走ボットからのスクショ＋解析結果を、Processed/{clientName}/screenshots/ に保存する。
+ * 画像本体と、解析結果を収めた同名 .json サイドカー（識別子は入れず匿名化）をペアで置く。
+ * @returns 画像ファイルの Drive ID
+ */
+export async function saveScreenshot(input: {
+  clientName: string;
+  imageBase64: string;
+  mediaType: string;
+  description: string;
+  capturedAt: string;
+}): Promise<string> {
+  const clientFolder = await getOrCreateClientFolder(input.clientName);
+  const ssFolder = await getOrCreateSubfolder(clientFolder, 'screenshots');
+
+  const buffer = Buffer.from(input.imageBase64, 'base64');
+  const hash8 = createHash('sha256').update(buffer).digest('hex').slice(0, 8);
+  const stamp = (input.capturedAt || 'shot').replace(/[^0-9A-Za-z]/g, '-');
+  const baseName = `${stamp}_${hash8}`;
+  const ext = SCREENSHOT_EXT[input.mediaType] ?? '.jpg';
+
+  const fileId = await uploadBinaryToFolder(ssFolder, `${baseName}${ext}`, input.mediaType, buffer);
+  const sidecar = JSON.stringify(
+    {
+      description: input.description,
+      mediaType: input.mediaType,
+      capturedAt: input.capturedAt,
+      hash: hash8,
+    },
+    null,
+    2
+  );
+  await uploadBinaryToFolder(
+    ssFolder,
+    `${baseName}.json`,
+    'application/json',
+    Buffer.from(sidecar, 'utf-8')
+  );
+  return fileId;
 }
 
 /**
@@ -176,12 +311,30 @@ export async function listAllFiles(folderIds: string[]): Promise<DriveFile[]> {
   return all;
 }
 
-/** DRIVE_FOLDER_ID と DRIVE_PROCESSED_FOLDER_ID を横断して全ファイルを返す */
+/**
+ * DRIVE_FOLDER_ID と DRIVE_PROCESSED_FOLDER_ID を横断して全ファイルを返す。
+ * Processed 配下はクライアント別サブフォルダ（Processed/{clientName}/）に整理されうるため、
+ * 直下ファイルに加えて 1 階層下のサブフォルダ内ファイルも列挙する（外部書き起こし照合の候補維持）。
+ */
 export async function listAllRelevantFiles(): Promise<DriveFile[]> {
   const folderId = process.env.DRIVE_FOLDER_ID;
   const processedFolderId = process.env.DRIVE_PROCESSED_FOLDER_ID;
-  const folders = [folderId, processedFolderId].filter((s): s is string => !!s);
-  return listAllFiles(folders);
+  const FOLDER_MIME = 'application/vnd.google-apps.folder';
+  const out: DriveFile[] = [];
+
+  if (folderId) out.push(...(await listAllFiles([folderId])));
+
+  if (processedFolderId) {
+    const top = await listAllFiles([processedFolderId]); // 直下ファイル＋クライアント別サブフォルダ
+    out.push(...top.filter((f) => f.mimeType !== FOLDER_MIME));
+    const subfolderIds = top.filter((f) => f.mimeType === FOLDER_MIME).map((f) => f.id);
+    if (subfolderIds.length > 0) {
+      const inner = await listAllFiles(subfolderIds);
+      out.push(...inner.filter((f) => f.mimeType !== FOLDER_MIME));
+    }
+  }
+
+  return out;
 }
 
 /**

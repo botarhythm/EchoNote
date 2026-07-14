@@ -145,9 +145,9 @@ async function processSession(fileId: string, originalFilename: string, mimeType
     console.error(`[EchoNote] リネームエラー (${fileId}):`, err);
   }
 
-  // 5. Processedフォルダに移動
+  // 5. Processedフォルダのクライアント別サブフォルダに移動
   try {
-    await moveToProcessed(fileId);
+    await moveToProcessed(fileId, clientName);
   } catch (err) {
     console.error(`[EchoNote] Processed移動エラー (${fileId}):`, err);
   }

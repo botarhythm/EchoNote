@@ -256,4 +256,5 @@ export interface Session {
   error?: string;
   processedAt?: string;
   progressMessage?: string;
+  createdAt?: string;      // Drive検知＝DB登録日時（投入日の特定に使う。旧データにはない）
 }
