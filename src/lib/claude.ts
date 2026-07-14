@@ -658,18 +658,54 @@ function getClient(): Anthropic {
 
 // ─── サマリー生成（初回自動） ──────────────────────────────────────────────────
 
+/** ISO日時（省略時=現在）を日本時間の "YYYY-MM-DD" にする */
+export function jstDateOf(iso?: string | null): string {
+  const d = iso ? new Date(iso) : new Date();
+  return d.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+}
+
+/** AI推定日付を投入日と大きく矛盾しない範囲で受け入れる許容日数 */
+const DATE_PLAUSIBLE_PAST_DAYS = 60;
+
+/**
+ * AIが推定したセッション日付の決定論ガード。
+ * ファイル名や会話からの推定は年を読み違えることがある（実例: ファイル名
+ * 20240714 を 2024-07-14 と解釈 — 実際は 2026-07-14 投入の当日録音）。
+ * 形式不正・未来日・投入日から60日超過去のいずれかは誤推定とみなし投入日を採用する。
+ */
+export function sanitizeSessionDate(
+  inferred: string | undefined,
+  uploadDate: string
+): string {
+  if (!inferred || !/^\d{4}-\d{2}-\d{2}$/.test(inferred)) return uploadDate;
+  if (inferred > uploadDate) return uploadDate; // 投入より未来の録音はあり得ない
+  const diffDays = (Date.parse(uploadDate) - Date.parse(inferred)) / 86_400_000;
+  if (diffDays > DATE_PLAUSIBLE_PAST_DAYS) {
+    console.log(
+      `[EchoNote] セッション日付の推定 ${inferred} は投入日 ${uploadDate} から${Math.round(diffDays)}日前 — 誤推定とみなし投入日を採用`
+    );
+    return uploadDate;
+  }
+  return inferred;
+}
+
 /** 初回自動サマリー: ノーマル議事録モード固定（Botarhythm固有の前提を一切持たない） */
 export async function generateSummary(
   transcript: Utterance[],
-  originalFilename: string
+  originalFilename: string,
+  uploadDate?: string // "YYYY-MM-DD"（JST・Drive検知日）。指定時は日付推定のガードに使う
 ): Promise<SessionSummary> {
   const transcriptText = transcript
     .map((u) => `[${u.timestamp}] 話者${u.speaker}: ${u.text}`)
     .join('\n');
 
+  const uploadDateSection = uploadDate
+    ? `\n【録音の投入日（日本時間）】\n${uploadDate}\n※セッション日付（date）の判断材料。会話やファイル名から日付を特定できない場合はこの投入日を使うこと。推定した日付がこの投入日より未来、または数ヶ月以上過去になる場合は年の読み違いを疑い、投入日と整合する解釈を優先すること。\n`
+    : '';
+
   const userPrompt = `【元のファイル名】
 ${originalFilename}
-
+${uploadDateSection}
 【文字起こし】
 ${transcriptText}`;
 
@@ -678,6 +714,8 @@ ${transcriptText}`;
     userPrompt,
     schema: buildNormalSummarySchema(),
   });
+  // プロンプトで防ぎ切れなかった誤推定を決定論で最終ガード
+  if (uploadDate) parsed.date = sanitizeSessionDate(parsed.date, uploadDate);
   return { ...parsed, mode: 'normal' };
 }
 

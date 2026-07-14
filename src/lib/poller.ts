@@ -10,7 +10,7 @@ import {
   setContentHash,
 } from './db';
 import { transcribeAudio } from './gemini';
-import { generateSummary } from './claude';
+import { generateSummary, jstDateOf } from './claude';
 import path from 'path';
 
 const POLL_INTERVAL = Number(process.env.POLL_INTERVAL_MS) || 60000;
@@ -185,12 +185,14 @@ async function processSession(fileId: string, originalFilename: string, mimeType
   const transcript = await transcribeAudio(audioBuffer, mimeType, onProgress, fileId);
   await updateStatus(fileId, 'summarizing', { transcript });
 
-  // 2. サマリー生成
+  // 2. サマリー生成（投入日を渡して日付の誤推定をガード。
+  //    再処理の場合も「今日」でなく元のDrive検知日時を投入日として使う）
   await onProgress('🧠 AIがサマリーを生成中...');
-  const summary = await generateSummary(transcript, originalFilename);
+  const uploadDate = jstDateOf((await getSession(fileId))?.createdAt);
+  const summary = await generateSummary(transcript, originalFilename, uploadDate);
 
   // 3. サマリーからメタデータを構築してDBを更新
-  const date = summary.date || new Date().toISOString().slice(0, 10);
+  const date = summary.date || uploadDate;
   const clientName = summary.clientName || '不明';
   const ext = path.extname(originalFilename) || '.m4a';
   const newFilename = `${date.replace(/-/g, '')}_${clientName}${ext}`;

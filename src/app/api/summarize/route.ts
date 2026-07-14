@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateSummary } from '@/lib/claude';
+import { generateSummary, jstDateOf } from '@/lib/claude';
 import { getSession, updateStatus } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
@@ -19,7 +19,12 @@ export async function POST(request: NextRequest) {
 
     await updateStatus(fileId, 'summarizing');
 
-    const summary = await generateSummary(session.transcript, session.meta.originalFilename);
+    // 投入日（Drive検知日時）を渡して日付の誤推定をガード
+    const summary = await generateSummary(
+      session.transcript,
+      session.meta.originalFilename,
+      jstDateOf(session.createdAt)
+    );
 
     await updateStatus(fileId, 'done', {
       summary,
