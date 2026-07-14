@@ -144,10 +144,9 @@ export async function renameFile(fileId: string, newName: string): Promise<void>
  */
 export async function moveToProcessed(fileId: string, clientName?: string): Promise<void> {
   const folderId = process.env.DRIVE_FOLDER_ID;
-  const processedFolderId = process.env.DRIVE_PROCESSED_FOLDER_ID;
-  if (!processedFolderId || !folderId) return;
+  if (!folderId) return;
 
-  const dest = clientName ? await getOrCreateClientFolder(clientName) : processedFolderId;
+  const dest = clientName ? await getOrCreateClientFolder(clientName) : await getProcessedRootId();
   const drive = getDrive();
   await drive.files.update({
     fileId,
@@ -191,10 +190,31 @@ export async function getOrCreateSubfolder(parentId: string, name: string): Prom
   return created.data.id;
 }
 
-/** DRIVE_PROCESSED_FOLDER_ID 配下のクライアント別サブフォルダ（Processed/{clientName}/）。 */
+/**
+ * アーカイブ親フォルダ（Processed 相当）の ID を返す。
+ * DRIVE_PROCESSED_FOLDER_ID が設定されていればそれを使う。未設定なら監視フォルダ
+ * （DRIVE_FOLDER_ID）配下に 'Processed' を get-or-create する — サービスアカウントは
+ * 監視フォルダの書込権限を継承するので、追加の共有設定なしで確実に書ける。
+ * 後で独立フォルダへ移して DRIVE_PROCESSED_FOLDER_ID を設定すれば、明示指定が優先される。
+ */
+let cachedProcessedRootId: string | null = null;
+async function getProcessedRootId(): Promise<string> {
+  if (cachedProcessedRootId) return cachedProcessedRootId;
+  const explicit = process.env.DRIVE_PROCESSED_FOLDER_ID;
+  if (explicit) {
+    cachedProcessedRootId = explicit;
+    return explicit;
+  }
+  const watchId = process.env.DRIVE_FOLDER_ID;
+  if (!watchId) throw new Error('DRIVE_FOLDER_ID / DRIVE_PROCESSED_FOLDER_ID がどちらも未設定');
+  const id = await getOrCreateSubfolder(watchId, 'Processed');
+  cachedProcessedRootId = id;
+  return id;
+}
+
+/** アーカイブ親フォルダ配下のクライアント別サブフォルダ（Processed/{clientName}/）。 */
 export async function getOrCreateClientFolder(clientName: string): Promise<string> {
-  const processedFolderId = process.env.DRIVE_PROCESSED_FOLDER_ID;
-  if (!processedFolderId) throw new Error('DRIVE_PROCESSED_FOLDER_ID が設定されていません');
+  const processedFolderId = await getProcessedRootId();
   return getOrCreateSubfolder(processedFolderId, clientName);
 }
 
@@ -203,9 +223,6 @@ export async function getOrCreateClientFolder(clientName: string): Promise<strin
  * assign（クライアント付け替え）の追従用。現在の親を removeParents に指定して移し替える。
  */
 export async function moveFileToClientFolder(fileId: string, clientName: string): Promise<void> {
-  const processedFolderId = process.env.DRIVE_PROCESSED_FOLDER_ID;
-  if (!processedFolderId) return;
-
   const dest = await getOrCreateClientFolder(clientName);
   const drive = getDrive();
   const cur = await drive.files.get({ fileId, fields: 'parents' });
@@ -320,12 +337,12 @@ export async function listAllFiles(folderIds: string[]): Promise<DriveFile[]> {
  */
 export async function listAllRelevantFiles(): Promise<DriveFile[]> {
   const folderId = process.env.DRIVE_FOLDER_ID;
-  const processedFolderId = process.env.DRIVE_PROCESSED_FOLDER_ID;
   const FOLDER_MIME = 'application/vnd.google-apps.folder';
   const out: DriveFile[] = [];
 
   if (folderId) out.push(...(await listAllFiles([folderId])));
 
+  const processedFolderId = await getProcessedRootId().catch(() => null);
   if (processedFolderId) {
     const top = await listAllFiles([processedFolderId]); // 直下ファイル＋クライアント別サブフォルダ
     out.push(...top.filter((f) => f.mimeType !== FOLDER_MIME));
