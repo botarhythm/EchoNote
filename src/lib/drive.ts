@@ -95,6 +95,8 @@ export async function getOrCreateChunksFolderId(): Promise<string> {
     q: `'${parentId}' in parents and name = '_chunks' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
     fields: 'files(id)',
     pageSize: 1,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
   });
   const existing = res.data.files?.[0];
   if (existing?.id) {
@@ -109,6 +111,7 @@ export async function getOrCreateChunksFolderId(): Promise<string> {
       parents: [parentId],
     },
     fields: 'id',
+    supportsAllDrives: true,
   });
   if (!created.data.id) throw new Error('チャンクフォルダ作成失敗');
   cachedChunksFolderId = created.data.id;
@@ -123,7 +126,7 @@ export async function deleteFile(fileId: string): Promise<void> {
 export async function downloadFile(fileId: string): Promise<Buffer> {
   const drive = getDrive();
   const res = await drive.files.get(
-    { fileId, alt: 'media' },
+    { fileId, alt: 'media', supportsAllDrives: true },
     { responseType: 'arraybuffer' }
   );
   return Buffer.from(res.data as ArrayBuffer);
@@ -134,6 +137,7 @@ export async function renameFile(fileId: string, newName: string): Promise<void>
   await drive.files.update({
     fileId,
     requestBody: { name: newName },
+    supportsAllDrives: true,
   });
 }
 
@@ -152,6 +156,7 @@ export async function moveToProcessed(fileId: string, clientName?: string): Prom
     fileId,
     addParents: dest,
     removeParents: folderId,
+    supportsAllDrives: true,
   });
 }
 
@@ -171,6 +176,8 @@ export async function getOrCreateSubfolder(parentId: string, name: string): Prom
     q: `'${parentId}' in parents and name = '${safeName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
     fields: 'files(id)',
     pageSize: 1,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
   });
   const existing = res.data.files?.[0];
   if (existing?.id) {
@@ -184,6 +191,7 @@ export async function getOrCreateSubfolder(parentId: string, name: string): Prom
       parents: [parentId],
     },
     fields: 'id',
+    supportsAllDrives: true,
   });
   if (!created.data.id) throw new Error(`サブフォルダ作成失敗: ${name}`);
   subfolderCache.set(cacheKey, created.data.id);
@@ -225,13 +233,14 @@ export async function getOrCreateClientFolder(clientName: string): Promise<strin
 export async function moveFileToClientFolder(fileId: string, clientName: string): Promise<void> {
   const dest = await getOrCreateClientFolder(clientName);
   const drive = getDrive();
-  const cur = await drive.files.get({ fileId, fields: 'parents' });
+  const cur = await drive.files.get({ fileId, fields: 'parents', supportsAllDrives: true });
   const parents = cur.data.parents || [];
   if (parents.includes(dest)) return; // 既に正しいフォルダに居る
   await drive.files.update({
     fileId,
     addParents: dest,
     removeParents: parents.join(',') || undefined,
+    supportsAllDrives: true,
   });
 }
 
@@ -317,6 +326,8 @@ export async function listAllFiles(folderIds: string[]): Promise<DriveFile[]> {
       fields: 'files(id, name, mimeType, modifiedTime)',
       orderBy: 'modifiedTime desc',
       pageSize: 1000,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
     });
     for (const f of res.data.files || []) {
       all.push({
