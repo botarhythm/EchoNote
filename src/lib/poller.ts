@@ -1,5 +1,14 @@
-import { listAudioFiles, downloadFile, renameFile, moveToProcessed } from './drive';
-import { initDb, upsertSession, getSession, updateStatus, updateProgress } from './db';
+import { listAudioFiles, downloadFile, renameFile, moveToProcessed, getFileMd5 } from './drive';
+import {
+  initDb,
+  getSession,
+  updateStatus,
+  updateProgress,
+  insertSessionIfAbsent,
+  findOriginalSessionByHash,
+  getSessionIdsWithoutHash,
+  setContentHash,
+} from './db';
 import { transcribeAudio } from './gemini';
 import { generateSummary } from './claude';
 import path from 'path';
@@ -42,9 +51,32 @@ export function startPolling() {
 
   setTimeout(async () => {
     await initDb();
+    backfillContentHashes().catch((err) =>
+      console.error('[EchoNote] ハッシュバックフィルエラー:', err)
+    );
     poll();
     setInterval(poll, POLL_INTERVAL);
   }, 3000);
+}
+
+/**
+ * ハッシュ埋め戻し: この機能導入前に処理されたセッションには content_hash が無く、
+ * 過去録音の再アップロードを重複検知できない。Drive のメタデータ（md5Checksum）を
+ * 取得して埋める — ダウンロード不要・AI処理なしなので起動時に安全に実行できる。
+ * Drive 上から削除済みのファイルはスキップ（次回起動でも再試行されるが実害なし）。
+ */
+async function backfillContentHashes(): Promise<void> {
+  const ids = await getSessionIdsWithoutHash();
+  if (ids.length === 0) return;
+  console.log(`[EchoNote] content_hash 未設定セッションのバックフィル開始: ${ids.length}件`);
+  let filled = 0;
+  for (const id of ids) {
+    const md5 = await getFileMd5(id);
+    if (!md5) continue; // Drive から消えたファイル等
+    await setContentHash(id, md5);
+    filled++;
+  }
+  console.log(`[EchoNote] バックフィル完了: ${filled}/${ids.length}件にハッシュを設定`);
 }
 
 export async function poll(): Promise<{ found: number; processing: string[] }> {
@@ -59,6 +91,41 @@ export async function poll(): Promise<{ found: number; processing: string[] }> {
       const existing = await getSession(file.id);
       if (existing) continue; // 登録済みならスキップ（errorの再試行は手動で）
 
+      const contentHash = file.md5Checksum;
+
+      // 重複検知: 同一内容の録音が既に取り込まれていれば、AI処理をスキップして
+      // このファイルは「重複」として記録し、Processed のクライアント別フォルダへ退避する。
+      if (contentHash) {
+        const original = await findOriginalSessionByHash(contentHash);
+        if (original) {
+          const dupMeta = {
+            date: original.meta.date || '',
+            clientName: original.meta.clientName || '',
+            originalFilename: file.name,
+            driveFileId: file.id,
+            mimeType: file.mimeType,
+          };
+          // アトミック登録（並行ポーリング/多重インスタンスでの二重登録を防ぐ）
+          const created = await insertSessionIfAbsent({
+            id: file.id,
+            meta: dupMeta,
+            status: 'duplicate',
+            contentHash,
+            duplicateOf: original.id,
+          });
+          if (!created) continue; // 他プロセスが先に登録済み
+          console.log(
+            `[EchoNote] 重複検知: ${file.name} は既存セッション ${original.id}（${original.meta.clientName || '不明'}）と同一内容。AI処理をスキップします。`
+          );
+          try {
+            await moveToProcessed(file.id, original.meta.clientName || undefined);
+          } catch (err) {
+            console.error(`[EchoNote] 重複ファイルのProcessed移動エラー (${file.id}):`, err);
+          }
+          continue;
+        }
+      }
+
       // どんなファイル名でも受け入れる
       const meta = {
         date: '',
@@ -68,7 +135,14 @@ export async function poll(): Promise<{ found: number; processing: string[] }> {
         mimeType: file.mimeType,
       };
 
-      await upsertSession({ id: file.id, meta, status: 'pending' });
+      // アトミック登録: 行を作れたインスタンスだけが処理を担当する（二重処理ガード）
+      const created = await insertSessionIfAbsent({
+        id: file.id,
+        meta,
+        status: 'pending',
+        contentHash: contentHash || undefined,
+      });
+      if (!created) continue; // 他プロセスが先に拾って処理中
       processing.push(file.id);
       console.log(`[EchoNote] 新規ファイル検知: ${file.name}`);
 

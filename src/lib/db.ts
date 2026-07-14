@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import type { Session, SessionStatus, Utterance, SessionSummary, ClientSettings } from './types';
+import type { Session, SessionMeta, SessionStatus, Utterance, SessionSummary, ClientSettings } from './types';
 
 let pool: Pool | null = null;
 
@@ -40,6 +40,9 @@ export async function initDb(): Promise<void> {
   `);
   // マイグレーション
   await p.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS progress_message TEXT`);
+  await p.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS content_hash TEXT`);
+  await p.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS duplicate_of TEXT`);
+  await p.query(`CREATE INDEX IF NOT EXISTS sessions_content_hash_idx ON sessions(content_hash)`);
   await p.query(`ALTER TABLE shares ADD COLUMN IF NOT EXISTS masked_terms TEXT`);
   await p.query(`ALTER TABLE shares ADD COLUMN IF NOT EXISTS anonymized_summary_json TEXT`);
   await p.query(`ALTER TABLE shares ADD COLUMN IF NOT EXISTS anonymized_transcript_json TEXT`);
@@ -122,6 +125,8 @@ interface SessionRow {
   summary_json: string | null;
   error_message: string | null;
   progress_message: string | null;
+  content_hash: string | null;
+  duplicate_of: string | null;
   created_at: string;
   processed_at: string | null;
 }
@@ -148,6 +153,8 @@ function rowToSession(row: SessionRow): Session {
     processedAt: row.processed_at || undefined,
     progressMessage: row.progress_message || undefined,
     createdAt: row.created_at || undefined,
+    contentHash: row.content_hash || undefined,
+    duplicateOf: row.duplicate_of || undefined,
   };
 }
 
@@ -198,6 +205,14 @@ export async function upsertSession(session: Partial<Session> & { id: string }):
       sets.push(`error_message = $${idx++}`);
       vals.push(session.error || null);
     }
+    if (session.contentHash !== undefined) {
+      sets.push(`content_hash = $${idx++}`);
+      vals.push(session.contentHash || null);
+    }
+    if (session.duplicateOf !== undefined) {
+      sets.push(`duplicate_of = $${idx++}`);
+      vals.push(session.duplicateOf || null);
+    }
     if (session.processedAt) {
       sets.push(`processed_at = $${idx++}`);
       vals.push(session.processedAt);
@@ -212,8 +227,8 @@ export async function upsertSession(session: Partial<Session> & { id: string }):
     }
   } else if (session.meta) {
     await p.query(
-      `INSERT INTO sessions (id, filename, client_name, session_date, memo, mime_type, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      `INSERT INTO sessions (id, filename, client_name, session_date, memo, mime_type, status, content_hash, duplicate_of)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         session.id,
         session.meta.originalFilename,
@@ -222,9 +237,80 @@ export async function upsertSession(session: Partial<Session> & { id: string }):
         session.meta.memo || null,
         session.meta.mimeType,
         session.status || 'pending',
+        session.contentHash || null,
+        session.duplicateOf || null,
       ]
     );
   }
+}
+
+/**
+ * 新規セッションをアトミックに登録する（重複処理ガードの要）。
+ * INSERT ... ON CONFLICT (id) DO NOTHING により、複数プロセス/並行ポーリングが
+ * 同じ Drive ファイルを同時に拾っても、行を作れたインスタンスだけが true を受け取る。
+ * @returns この呼び出しが実際に行を作成できたら true（＝処理担当）。既に存在すれば false。
+ */
+export async function insertSessionIfAbsent(
+  session: Partial<Session> & { id: string; meta: SessionMeta }
+): Promise<boolean> {
+  const p = getPool();
+  const res = await p.query(
+    `INSERT INTO sessions (id, filename, client_name, session_date, memo, mime_type, status, content_hash, duplicate_of)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (id) DO NOTHING
+     RETURNING id`,
+    [
+      session.id,
+      session.meta.originalFilename,
+      session.meta.clientName,
+      session.meta.date,
+      session.meta.memo || null,
+      session.meta.mimeType,
+      session.status || 'pending',
+      session.contentHash || null,
+      session.duplicateOf || null,
+    ]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+/** content_hash 未設定のセッションID一覧（バックフィル対象）。duplicate は対象外。 */
+export async function getSessionIdsWithoutHash(): Promise<string[]> {
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id FROM sessions WHERE content_hash IS NULL AND status != 'duplicate'`
+  );
+  return (res.rows as { id: string }[]).map((r) => r.id);
+}
+
+/** content_hash のみを更新する（バックフィル用） */
+export async function setContentHash(id: string, hash: string): Promise<void> {
+  const p = getPool();
+  await p.query(`UPDATE sessions SET content_hash = $2 WHERE id = $1`, [id, hash]);
+}
+
+/**
+ * 同一内容（content_hash 一致）の「元」セッションを1件返す。
+ * status が 'duplicate'（重複マーク済み）と 'error'（失敗し再取り込みの余地あり）は
+ * 除外する — 失敗した録音の再アップロードは重複扱いせず、改めて処理させたいため。
+ * 最初に取り込まれたものを元とみなす（created_at 昇順）。
+ */
+export async function findOriginalSessionByHash(hash: string): Promise<Session | null> {
+  if (!hash) return null;
+  const p = getPool();
+  const res = await p.query(
+    `SELECT id, filename, client_name, session_date, memo, mime_type, status,
+            summary_json, error_message, progress_message, content_hash, duplicate_of,
+            created_at, processed_at
+     FROM sessions
+     WHERE content_hash = $1 AND status NOT IN ('duplicate', 'error')
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [hash]
+  );
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0] as Omit<SessionRow, 'transcript_json'>;
+  return rowToSession({ ...row, transcript_json: null });
 }
 
 export async function getSession(id: string): Promise<Session | null> {
@@ -241,7 +327,8 @@ export async function getSessionLite(id: string): Promise<Session | null> {
   const p = getPool();
   const res = await p.query(
     `SELECT id, filename, client_name, session_date, memo, mime_type, status,
-            summary_json, error_message, progress_message, created_at, processed_at
+            summary_json, error_message, progress_message, content_hash, duplicate_of,
+            created_at, processed_at
      FROM sessions WHERE id = $1`,
     [id]
   );
@@ -287,7 +374,8 @@ export async function getAllSessionsLite(): Promise<Session[]> {
   const p = getPool();
   const res = await p.query(
     `SELECT id, filename, client_name, session_date, memo, mime_type, status,
-            summary_json, error_message, progress_message, created_at, processed_at
+            summary_json, error_message, progress_message, content_hash, duplicate_of,
+            created_at, processed_at
      FROM sessions
      ${ORDER_BY_CHRONOLOGICAL}`
   );

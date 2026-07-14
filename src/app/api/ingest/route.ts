@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { uploadAudioFile, getOrCreateChunksFolderId } from '@/lib/drive';
-import { insertChunk } from '@/lib/db';
+import { uploadAudioFile, getOrCreateChunksFolderId, contentHashOf } from '@/lib/drive';
+import { insertChunk, findOriginalSessionByHash } from '@/lib/db';
 import { mergeChunkGroup } from '@/lib/chunk-merger';
 
 export const runtime = 'nodejs';
@@ -134,6 +134,21 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 従来モード（単一ファイル） ──
+    // 重複ガード: 同一内容が既に取り込まれていれば、アップロードせず既存セッションを返す。
+    // md5 は Drive の md5Checksum と同方式なので、poller 側の重複判定とも整合する。
+    const contentHash = contentHashOf(buffer);
+    const duplicate = await findOriginalSessionByHash(contentHash);
+    if (duplicate) {
+      return NextResponse.json({
+        ok: true,
+        duplicate: true,
+        sessionId: duplicate.id,
+        filename: duplicate.meta.originalFilename,
+        viewUrl: `${origin}/session/${duplicate.id}`,
+        message: '同一内容の録音が既に取り込まれています。既存の結果を表示します。',
+      });
+    }
+
     const filename = `${today}_${baseName}${memoPart}.${ext}`;
     const fileId = await uploadAudioFile(filename, mimeType, buffer);
 

@@ -21,6 +21,10 @@ const STATUS_CONFIG: Record<SessionStatus, { label: string; className: string }>
     label: 'エラー',
     className: 'bg-red-500/20 text-red-300 border-red-500/30',
   },
+  duplicate: {
+    label: '重複',
+    className: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+  },
 };
 
 export function StatusBadge({ status }: { status: SessionStatus }) {

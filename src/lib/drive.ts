@@ -8,6 +8,12 @@ export interface DriveFile {
   name: string;
   mimeType: string;
   modifiedTime: string;
+  md5Checksum?: string;   // バイナリファイルの内容MD5（Driveがサーバー側で算出。DL不要）
+}
+
+/** バッファの内容ハッシュを Drive の md5Checksum と同じ方式（MD5 hex）で算出する。 */
+export function contentHashOf(buffer: Buffer): string {
+  return createHash('md5').update(buffer).digest('hex');
 }
 
 function getAuth() {
@@ -29,10 +35,15 @@ export async function listAudioFiles(): Promise<DriveFile[]> {
   if (!folderId) throw new Error('DRIVE_FOLDER_ID が設定されていません');
 
   const drive = getDrive();
+  // フォルダ除外は必須: Drive API は mimeType 条件と name 条件を OR で混ぜると
+  // フォルダまで返すことがある（実測）。Processed フォルダが音声として誤検知され
+  // ダウンロード403になる事故を防ぐ。
   const res = await drive.files.list({
-    q: `'${folderId}' in parents and trashed = false and (mimeType contains 'audio/' or mimeType contains 'video/webm' or name contains '.m4a' or name contains '.mp3' or name contains '.wav' or name contains '.webm' or name contains '.ogg' or name contains '.mp4')`,
-    fields: 'files(id, name, mimeType, modifiedTime)',
+    q: `'${folderId}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder' and (mimeType contains 'audio/' or mimeType contains 'video/webm' or name contains '.m4a' or name contains '.mp3' or name contains '.wav' or name contains '.webm' or name contains '.ogg' or name contains '.mp4')`,
+    fields: 'files(id, name, mimeType, modifiedTime, md5Checksum)',
     orderBy: 'modifiedTime desc',
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
   });
 
   return (res.data.files || []).map((f) => ({
@@ -40,6 +51,7 @@ export async function listAudioFiles(): Promise<DriveFile[]> {
     name: f.name!,
     mimeType: f.mimeType!,
     modifiedTime: f.modifiedTime!,
+    md5Checksum: f.md5Checksum || undefined,
   }));
 }
 
@@ -116,6 +128,24 @@ export async function getOrCreateChunksFolderId(): Promise<string> {
   if (!created.data.id) throw new Error('チャンクフォルダ作成失敗');
   cachedChunksFolderId = created.data.id;
   return created.data.id;
+}
+
+/**
+ * ファイルの内容MD5をメタデータだけで取得する（ダウンロード不要）。
+ * ファイルが削除済み等で取得できない場合は null。
+ */
+export async function getFileMd5(fileId: string): Promise<string | null> {
+  const drive = getDrive();
+  try {
+    const res = await drive.files.get({
+      fileId,
+      fields: 'md5Checksum',
+      supportsAllDrives: true,
+    });
+    return res.data.md5Checksum || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function deleteFile(fileId: string): Promise<void> {

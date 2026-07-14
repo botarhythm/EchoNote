@@ -4,7 +4,8 @@ export type SessionStatus =
   | 'transcribing' // Gemini処理中
   | 'summarizing'  // Claude処理中
   | 'done'         // 完了
-  | 'error';       // エラー
+  | 'error'        // エラー
+  | 'duplicate';   // 既存録音と同一内容（AI処理をスキップ）
 
 // ファイル名から取得するメタデータ
 export interface SessionMeta {
@@ -257,4 +258,6 @@ export interface Session {
   processedAt?: string;
   progressMessage?: string;
   createdAt?: string;      // Drive検知＝DB登録日時（投入日の特定に使う。旧データにはない）
+  contentHash?: string;    // 音声内容のMD5（Driveのmd5Checksumと一致）。重複検知に使う
+  duplicateOf?: string;    // status='duplicate' のとき、元セッションのID
 }
