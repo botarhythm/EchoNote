@@ -220,6 +220,17 @@ async function getProcessedRootId(): Promise<string> {
   return id;
 }
 
+/**
+ * スクショアーカイブの親フォルダ ID(共有ドライブ内のフォルダ)。
+ * SA はストレージ容量を持たずマイドライブへ新規ファイルを作成できない(Google仕様)ため、
+ * スクショの新規アップロードは共有ドライブが必須。録音の整理(メタデータ移動)とは保存先を分離する。
+ */
+function getScreenshotRootId(): string {
+  const id = process.env.DRIVE_SCREENSHOT_ROOT_ID;
+  if (!id) throw new Error('DRIVE_SCREENSHOT_ROOT_ID が設定されていません(スクショ保存には共有ドライブ内フォルダが必要)');
+  return id;
+}
+
 /** アーカイブ親フォルダ配下のクライアント別サブフォルダ（Processed/{clientName}/）。 */
 export async function getOrCreateClientFolder(clientName: string): Promise<string> {
   const processedFolderId = await getProcessedRootId();
@@ -283,7 +294,7 @@ function jstFileStamp(iso: string): string {
 }
 
 /**
- * 伴走ボットからのスクショを、録音と同じクライアント直下フォルダ（Processed/{clientName}/）へ
+ * 伴走ボットからのスクショを、共有ドライブの {スクショroot}/{clientName}/ へ
  * 時系列で保存する。解析結果は別ファイル（サイドカー）にせず Drive ファイルの「説明」メタデータに
  * 載せる — 見返す時に画像と説明が1ファイルにまとまり、時系列が JSON で寸断されない。
  * ハッシュ・撮影時刻・mediaType は Drive 自身のメタデータ（createdTime/mimeType）で代替できる。
@@ -296,7 +307,7 @@ export async function saveScreenshot(input: {
   description: string;
   capturedAt: string;
 }): Promise<string> {
-  const clientFolder = await getOrCreateClientFolder(input.clientName);
+  const clientFolder = await getOrCreateSubfolder(getScreenshotRootId(), input.clientName);
 
   const buffer = Buffer.from(input.imageBase64, 'base64');
   const hash8 = createHash('sha256').update(buffer).digest('hex').slice(0, 8);
