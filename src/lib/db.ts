@@ -384,6 +384,37 @@ export async function getAllSessionsLite(): Promise<Session[]> {
   );
 }
 
+/**
+ * 契約トピックを含む完了セッションを新しい順で返す（IS請求論拠の同期用）。
+ * summary_json のテキストマッチで粗く絞り、パース後に contractTopics 非空で確定判定する。
+ */
+export async function getSessionsWithContractTopics(opts?: {
+  since?: string; // "YYYY-MM-DD"（processed_at がこの日以降のみ）
+  limit?: number;
+}): Promise<Session[]> {
+  const p = getPool();
+  const limit = Math.min(Math.max(opts?.limit ?? 50, 1), 200);
+  const params: unknown[] = [];
+  let sinceClause = '';
+  if (opts?.since && /^\d{4}-\d{2}-\d{2}$/.test(opts.since)) {
+    params.push(opts.since);
+    sinceClause = `AND processed_at >= $${params.length}::date`;
+  }
+  const res = await p.query(
+    `SELECT * FROM sessions
+     WHERE status = 'done'
+       AND summary_json IS NOT NULL
+       AND summary_json LIKE '%"contractTopics"%'
+       ${sinceClause}
+     ORDER BY processed_at DESC
+     LIMIT ${limit}`,
+    params
+  );
+  return (res.rows as SessionRow[])
+    .map(rowToSession)
+    .filter((s) => (s.summary?.contractTopics?.length ?? 0) > 0);
+}
+
 /** クライアント名でフィルタし、完了済みセッションを日付昇順で返す（クロス分析用） */
 export async function getSessionsByClient(clientName: string): Promise<Session[]> {
   const p = getPool();

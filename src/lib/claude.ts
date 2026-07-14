@@ -100,6 +100,21 @@ const KEY_QUOTE_SCHEMA = obj({
   context: str('この発言がなぜ重要か・何を示しているか'),
 });
 
+const CONTRACT_TOPIC_SCHEMA = obj({
+  type: {
+    type: 'string',
+    enum: ['新規契約', '料金合意', 'スコープ変更', '支払条件', '解約・保留', 'その他'],
+    description: '契約トピックの種類',
+  },
+  description: str('何が合意・協議されたか。当事者と内容がわかる1〜2文（例: "伴走コーチング全8回・月2回ペースでの実施に合意"）'),
+  amount: str('言及された金額を会話の表現に忠実に（例: "¥105,600"・"月5万円"・"総額25万円"）。金額の言及がなければ空文字'),
+  timeline: str('期間・開始時期・支払期日など（例: "8月開始・2ヶ月間"・"着手時一括"）。なければ空文字'),
+  agreed: {
+    type: 'boolean',
+    description: 'true=このセッションで確定合意した / false=提案・協議中の段階',
+  },
+});
+
 const SESSION_MOMENT_SCHEMA = obj({
   type: {
     type: 'string',
@@ -137,6 +152,10 @@ function buildSummarySchema(opts: SummarySchemaOptions) {
     keyNumbers: arr(
       KEY_NUMBER_SCHEMA,
       '会話に登場した重要な数値・金額・期日・割合・件数。後から「あの数字いくらだったっけ」と探される情報を漏らさず。なければ空配列'
+    ),
+    contractTopics: arr(
+      CONTRACT_TOPIC_SCHEMA,
+      '契約・受注・請求に関わる言及（新規契約の合意、料金・回数・支払条件の合意や変更、スコープ変更、解約・保留など）。請求書発行の論拠として経理に同期されるため、金額・条件・確定/協議中の別を会話の表現に忠実に抽出する。該当がなければ空配列'
     ),
     clientPains: arr({ type: 'string' }, '主要な議題・課題・論点（背景・文脈を含む具体的な記述）'),
     adviceGiven: arr({ type: 'string' }, '提案・アドバイス・結論（根拠や背景を添えて）'),

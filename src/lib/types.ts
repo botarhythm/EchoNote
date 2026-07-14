@@ -42,6 +42,15 @@ export interface KeyNumber {
   context?: string;    // 例: "4月から開始で合意"
 }
 
+// 契約・請求に関わるトピック（Insight-Scope の請求書発行論拠として同期される）
+export interface ContractTopic {
+  type: '新規契約' | '料金合意' | 'スコープ変更' | '支払条件' | '解約・保留' | 'その他';
+  description: string; // 何が合意・協議されたか（当事者と内容がわかる1〜2文）
+  amount?: string;     // 言及された金額（例: "¥105,600"・"月5万円"）
+  timeline?: string;   // 期間・開始時期・支払期日など
+  agreed: boolean;     // true=確定合意 / false=提案・協議中
+}
+
 // Claude APIが返すサマリーのJSON構造
 export interface SessionSummary {
   mode?: SummaryMode;                    // 'normal'|'botarhythm'（未設定 = 後方互換で推測）
@@ -54,6 +63,7 @@ export interface SessionSummary {
   chapters?: Chapter[];                  // タイムスタンプ付き章立て
   decisions?: string[];                  // このセッションで確定した決定事項のみ
   keyNumbers?: KeyNumber[];              // 言及された重要な数値・金額・期日
+  contractTopics?: ContractTopic[];      // 契約・請求に関わる言及（IS請求論拠・旧データにはない）
   clientPains: string[];
   adviceGiven: string[];
   nextActions: NextAction[];

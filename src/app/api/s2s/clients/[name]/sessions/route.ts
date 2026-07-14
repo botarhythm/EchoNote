@@ -52,6 +52,7 @@ export async function GET(
       sessionType: sum.sessionType,
       executiveSummary: sum.executiveSummary,
       decisions: sum.decisions,
+      contractTopics: sum.contractTopics, // 契約・請求に関わる言及（伴走ボットの店主報告用）
       clientPains: sum.clientPains,
       adviceGiven: sum.adviceGiven,
       nextActions: sum.nextActions,
