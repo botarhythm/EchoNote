@@ -1,5 +1,6 @@
-import { google } from 'googleapis';
-import type { drive_v3 } from 'googleapis';
+// googleapis 本体は全API（約200種）を読み込み常駐RSSが約+90MBになるため、Drive単体パッケージを使う
+// （実測: googleapis全体 +91MB / @googleapis/drive +9MB。docs/adr/0001 参照）
+import { drive, auth, type drive_v3 } from '@googleapis/drive';
 import { Readable } from 'stream';
 import { createHash } from 'node:crypto';
 
@@ -20,14 +21,14 @@ function getAuth() {
   const keyBase64 = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!keyBase64) throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY が設定されていません');
   const key = JSON.parse(Buffer.from(keyBase64, 'base64').toString('utf-8'));
-  return new google.auth.GoogleAuth({
+  return new auth.GoogleAuth({
     credentials: key,
     scopes: ['https://www.googleapis.com/auth/drive'],
   });
 }
 
 function getDrive(): drive_v3.Drive {
-  return google.drive({ version: 'v3', auth: getAuth() });
+  return drive({ version: 'v3', auth: getAuth() });
 }
 
 export async function listAudioFiles(): Promise<DriveFile[]> {

@@ -1,0 +1,1 @@
+{"at":"2026-08-22T00:00:00.000Z","days":7,"services":{"EchoNote":{"memMB":249,"cpu":0},"Postgres":{"memMB":46,"cpu":0}},"appMB":249,"thresholdAppMB":120,"verdict":"FAIL","note":"変更前ベースライン（googleapis全体読込）"}
