@@ -17,6 +17,10 @@ export function contentHashOf(buffer: Buffer): string {
   return createHash('md5').update(buffer).digest('hex');
 }
 
+// クライアントはプロセス内で使い回す。毎回 GoogleAuth を作り直すとアクセストークンの
+// キャッシュが効かず、Drive 呼び出しのたびにトークン取得（oauth2.googleapis.com）が走る。
+let cachedDrive: drive_v3.Drive | null = null;
+
 function getAuth() {
   const keyBase64 = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!keyBase64) throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY が設定されていません');
@@ -28,7 +32,8 @@ function getAuth() {
 }
 
 function getDrive(): drive_v3.Drive {
-  return drive({ version: 'v3', auth: getAuth() });
+  if (!cachedDrive) cachedDrive = drive({ version: 'v3', auth: getAuth() });
+  return cachedDrive;
 }
 
 export async function listAudioFiles(): Promise<DriveFile[]> {
